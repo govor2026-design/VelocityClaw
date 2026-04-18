@@ -10,5 +10,4 @@ services:
       - ./workspace:/workspace
     restart: always
     user: velocity_claw
-    user: velocity_claw
     command: ["python", "cli.py", "--server"]

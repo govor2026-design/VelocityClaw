@@ -13,8 +13,10 @@ class FileSystemTool:
 
     def _validate_path(self, path: str) -> Path:
         """Validate and resolve path within workspace."""
+        raw = Path(path)
+        candidate = raw if raw.is_absolute() else (self.workspace_root / raw)
         try:
-            resolved = Path(path).resolve()
+            resolved = candidate.resolve()
         except (OSError, ValueError) as e:
             raise ValueError(f"Invalid path: {e}")
 
@@ -24,18 +26,16 @@ class FileSystemTool:
         return resolved
 
     def _check_file_size(self, path: Path) -> None:
-        """Check file size against limits."""
         if path.exists() and path.stat().st_size > self.settings.max_file_size:
             raise ValueError(f"File too large: {path.stat().st_size} > {self.settings.max_file_size}")
 
     def read(self, path: str) -> str:
         resolved = self._validate_path(path)
         self._check_file_size(resolved)
-
         try:
             with open(resolved, "r", encoding="utf-8") as handle:
                 content = handle.read()
-                if len(content.encode('utf-8')) > self.settings.max_file_size:
+                if len(content.encode("utf-8")) > self.settings.max_file_size:
                     raise ValueError(f"Content too large: {len(content)}")
                 return content
         except UnicodeDecodeError:
@@ -43,9 +43,8 @@ class FileSystemTool:
 
     def write(self, path: str, content: str) -> None:
         resolved = self._validate_path(path)
-        if len(content.encode('utf-8')) > self.settings.max_file_size:
+        if len(content.encode("utf-8")) > self.settings.max_file_size:
             raise ValueError(f"Content too large: {len(content)}")
-
         resolved.parent.mkdir(parents=True, exist_ok=True)
         with open(resolved, "w", encoding="utf-8") as handle:
             handle.write(content)
@@ -53,9 +52,9 @@ class FileSystemTool:
     def append(self, path: str, content: str) -> None:
         resolved = self._validate_path(path)
         current_size = resolved.stat().st_size if resolved.exists() else 0
-        if current_size + len(content.encode('utf-8')) > self.settings.max_file_size:
-            raise ValueError(f"File would exceed size limit")
-
+        if current_size + len(content.encode("utf-8")) > self.settings.max_file_size:
+            raise ValueError("File would exceed size limit")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
         with open(resolved, "a", encoding="utf-8") as handle:
             handle.write(content)
 
@@ -63,17 +62,14 @@ class FileSystemTool:
         content = self.read(path)
         if old_string not in content:
             raise ValueError(f"Old string not found in {path}")
-        new_content = content.replace(old_string, new_string, 1)
-        self.write(path, new_content)
+        self.write(path, content.replace(old_string, new_string, 1))
 
     def exists(self, path: str) -> bool:
-        resolved = self._validate_path(path)
-        return resolved.exists()
+        return self._validate_path(path).exists()
 
     def search(self, root: str, pattern: str, extensions: Optional[List[str]] = None) -> List[str]:
         root_resolved = self._validate_path(root)
         matches = []
-
         for base, _, files in os.walk(root_resolved):
             for name in files:
                 if extensions and not any(name.endswith(ext) for ext in extensions):
@@ -96,14 +92,13 @@ class FileSystemTool:
         return [str(p.relative_to(self.workspace_root)) for p in resolved.iterdir()]
 
     def to_json(self, path: str):
-        content = self.read(path)
         try:
-            return json.loads(content)
+            return json.loads(self.read(path))
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON: {e}")
 
     def write_json(self, path: str, data):
         json_str = json.dumps(data, indent=2, ensure_ascii=False)
-        if len(json_str.encode('utf-8')) > self.settings.max_file_size:
+        if len(json_str.encode("utf-8")) > self.settings.max_file_size:
             raise ValueError("JSON too large")
         self.write(path, json_str)
