@@ -77,6 +77,38 @@ docker build -t velocity-claw .
 docker run --env-file .env -p 8000:8000 velocity-claw
 ```
 
+## Развертывание на VPS
+
+### Вариант 1: Python виртуальное окружение
+
+```bash
+cd ~/VelocityClaw
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# заполните .env реальными ключами
+python cli.py --server
+```
+
+Для службы systemd используйте файл `deploy/velocity_claw.service` и запустите:
+
+```bash
+sudo cp deploy/velocity_claw.service /etc/systemd/system/velocity_claw.service
+sudo systemctl daemon-reload
+sudo systemctl enable velocity_claw.service
+sudo systemctl start velocity_claw.service
+sudo systemctl status velocity_claw.service
+```
+
+### Вариант 2: Docker Compose
+
+```bash
+docker compose up -d
+```
+
+Docker Compose автоматически перезапустит контейнер при сбоях.
+
 ## Telegram-бот: команды
 
 - `/start` — запуск бота

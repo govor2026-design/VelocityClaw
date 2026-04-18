@@ -10,10 +10,24 @@ def build_agent():
     return VelocityClawAgent(settings=settings)
 
 
+def _append_signature(text: str) -> str:
+    return f"{text.rstrip()}\n\nvelocity claw"
+
+
 async def run_task_cli(task: str):
     agent = build_agent()
     result = await agent.run_task(task)
-    print(result)
+    if isinstance(result, dict):
+        output = [f"Задача: {result.get('task')}", f"Статус: {result.get('status')}" ]
+        summary = result.get('summary', '')
+        if summary:
+            output.append(f"Итог: {summary}")
+        plan = result.get('plan', '')
+        if plan:
+            output.append(f"План: {plan}")
+        print(_append_signature("\n".join(output)))
+    else:
+        print(_append_signature(str(result)))
 
 
 def run_server():
@@ -45,7 +59,7 @@ def main():
     elif args.task:
         asyncio.run(run_task_cli(args.task))
     elif args.status:
-        print("Velocity Claw ready. Use --task, --server or --telegram.")
+        print(_append_signature("Velocity Claw ready. Use --task, --server or --telegram."))
     else:
         parser.print_help()
 

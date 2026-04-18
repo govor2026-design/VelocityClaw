@@ -1,30 +1,54 @@
 import asyncio
 import json
-from typing import Optional
-import requests
+from typing import Dict, Optional
+import aiohttp
 from velocity_claw.config.settings import Settings
 from velocity_claw.logs.logger import get_logger
+
+
+class ProviderNotConfiguredError(Exception):
+    pass
+
+
+class ProviderRequestError(Exception):
+    pass
+
+
+class ProviderResponseError(Exception):
+    pass
 
 
 class ModelRouter:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.logger = get_logger("velocity_claw.models")
+        self.timeout = aiohttp.ClientTimeout(total=60)
 
-    async def route(self, task_type: str, prompt: str) -> str:
+    async def route(self, task_type: str, prompt: str) -> Dict:
         provider = self.choose_provider(task_type)
         self.logger.info("Routing %s task to provider %s", task_type, provider)
-        if provider == "openai":
-            return self.call_openai(prompt, task_type)
-        if provider == "anthropic":
-            return self.call_anthropic(prompt, task_type)
-        if provider == "gemini":
-            return self.call_gemini(prompt, task_type)
-        if provider == "openrouter":
-            return self.call_openrouter(prompt, task_type)
-        if provider == "ollama":
-            return self.call_ollama(prompt, task_type)
-        return self.call_openai(prompt, task_type)
+
+        for attempt in range(3):  # Retry up to 3 times
+            try:
+                if provider == "openai":
+                    response = await self.call_openai(prompt, task_type)
+                elif provider == "anthropic":
+                    response = await self.call_anthropic(prompt, task_type)
+                elif provider == "gemini":
+                    response = await self.call_gemini(prompt, task_type)
+                elif provider == "openrouter":
+                    response = await self.call_openrouter(prompt, task_type)
+                elif provider == "ollama":
+                    response = await self.call_ollama(prompt, task_type)
+                else:
+                    response = await self.call_openai(prompt, task_type)
+
+                return self._normalize_response(provider, response)
+            except (ProviderNotConfiguredError, ProviderRequestError, ProviderResponseError) as e:
+                if attempt == 2:  # Last attempt
+                    raise e
+                self.logger.warning("Provider %s failed (attempt %d): %s", provider, attempt + 1, e)
+                await asyncio.sleep(1)  # Wait before retry
 
     def choose_provider(self, task_type: str) -> str:
         if task_type in ["code", "planning"]:
@@ -39,27 +63,32 @@ class ModelRouter:
         for provider in order:
             if getattr(self.settings, f"{provider}_api_key", None) or provider == "ollama":
                 return provider
-        return "openai"
+        raise ProviderNotConfiguredError("No providers configured")
 
-    def call_openai(self, prompt: str, task_type: str) -> str:
+    async def call_openai(self, prompt: str, task_type: str) -> Dict:
         if not self.settings.openai_api_key:
-            return "OpenAI API key not configured."
+            raise ProviderNotConfiguredError("OpenAI API key not configured")
+
         url = "https://api.openai.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {self.settings.openai_api_key}", "Content-Type": "application/json"}
-        model = "gpt-4o-mini" if task_type == "code" else "gpt-4o-mini"
+        model = "gpt-4o-mini"
         payload = {
             "model": model,
             "messages": [{"role": "system", "content": "Velocity Claw assistant."}, {"role": "user", "content": prompt}],
             "temperature": 0.2,
             "max_tokens": 800,
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        data = response.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
-    def call_openrouter(self, prompt: str, task_type: str) -> str:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return data
+
+    async def call_openrouter(self, prompt: str, task_type: str) -> Dict:
         if not self.settings.openrouter_api_key:
-            return "OpenRouter API key not configured."
+            raise ProviderNotConfiguredError("OpenRouter API key not configured")
+
         url = "https://api.openrouter.ai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {self.settings.openrouter_api_key}", "Content-Type": "application/json"}
         payload = {
@@ -68,42 +97,89 @@ class ModelRouter:
             "temperature": 0.25,
             "max_tokens": 700,
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        data = response.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
-    def call_anthropic(self, prompt: str, task_type: str) -> str:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return data
+
+    async def call_anthropic(self, prompt: str, task_type: str) -> Dict:
         if not self.settings.anthropic_api_key:
-            return "Anthropic API key not configured."
-        url = "https://api.anthropic.com/v1/complete"
+            raise ProviderNotConfiguredError("Anthropic API key not configured")
+
+        url = "https://api.anthropic.com/v1/messages"
         headers = {
             "x-api-key": self.settings.anthropic_api_key,
             "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01"
         }
-        model = "claude-3.5-sonic" if task_type in ["fast", "summarize"] else "claude-3.5"
+        model = "claude-3-5-sonnet-20240620"
         payload = {
             "model": model,
-            "prompt": prompt,
-            "max_tokens_to_sample": 700,
+            "max_tokens": 700,
             "temperature": 0.2,
+            "messages": [{"role": "user", "content": prompt}]
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        data = response.json()
-        return data.get("completion", "")
 
-    def call_gemini(self, prompt: str, task_type: str) -> str:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return data
+
+    async def call_gemini(self, prompt: str, task_type: str) -> Dict:
         if not self.settings.gemini_api_key:
-            return "Gemini API key not configured."
-        url = "https://gemini.googleapis.com/v1beta2/models/text-bison-001:generate"
-        headers = {"Authorization": f"Bearer {self.settings.gemini_api_key}", "Content-Type": "application/json"}
-        payload = {"prompt": {"text": prompt}, "temperature": 0.2, "maxOutputTokens": 700}
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        data = response.json()
-        return data.get("candidates", [{}])[0].get("output", "")
+            raise ProviderNotConfiguredError("Gemini API key not configured")
 
-    def call_ollama(self, prompt: str, task_type: str) -> str:
-        url = f"{self.settings.ollama_url}/api/v1/complete"
-        payload = {"model": "llama2", "prompt": prompt, "max_tokens": 700, "temperature": 0.25}
-        response = requests.post(url, json=payload, timeout=60)
-        data = response.json()
-        return data.get("completion", "")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={self.settings.gemini_api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 700}
+        }
+
+        async with aiohttp.ClientSession(timeout=self.timeout) as session:
+            async with session.post(url, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return data
+
+    async def call_ollama(self, prompt: str, task_type: str) -> Dict:
+        url = f"{self.settings.ollama_url}/api/generate"
+        payload = {"model": "llama2", "prompt": prompt, "stream": False}
+
+        async with aiohttp.ClientSession(timeout=self.timeout) as session:
+            async with session.post(url, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return data
+
+    def _normalize_response(self, provider: str, data: Dict) -> Dict:
+        try:
+            if provider == "openai" or provider == "openrouter":
+                text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                usage = data.get("usage", {})
+            elif provider == "anthropic":
+                text = data.get("content", [{}])[0].get("text", "")
+                usage = data.get("usage", {})
+            elif provider == "gemini":
+                text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                usage = {}
+            elif provider == "ollama":
+                text = data.get("response", "")
+                usage = {}
+            else:
+                raise ProviderResponseError(f"Unknown provider: {provider}")
+
+            if not text:
+                raise ProviderResponseError("Empty response from provider")
+
+            return {
+                "provider": provider,
+                "model": data.get("model", "unknown"),
+                "text": text,
+                "usage": usage,
+                "raw": data
+            }
+        except KeyError as e:
+            raise ProviderResponseError(f"Invalid response format: {e}")

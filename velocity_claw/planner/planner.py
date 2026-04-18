@@ -1,7 +1,22 @@
 import asyncio
+import json
 from typing import Dict, List
+from pydantic import BaseModel, ValidationError
 from velocity_claw.models.router import ModelRouter
 from velocity_claw.logs.logger import get_logger
+
+
+class PlanStep(BaseModel):
+    id: int
+    title: str
+    tool: str
+    args: Dict
+    expected_output: str
+
+
+class Plan(BaseModel):
+    task: str
+    steps: List[PlanStep]
 
 
 class Planner:
@@ -14,32 +29,37 @@ class Planner:
         context = context or {}
         prompt = self._build_plan_prompt(task, context)
         response = await self.router.route("planning", prompt)
-        steps = self._parse_plan(response)
-        return {
-            "task": task,
-            "steps": steps,
-            "analysis": response,
-        }
+        plan = self._parse_plan(response)
+        return plan.dict()
 
     def _build_plan_prompt(self, task: str, context: Dict) -> str:
         instructions = [
             "Ты агент Velocity Claw.",
-            "Разбей задачу на логические этапы и предложи порядок выполнения.",
-            "Укажи краткие шаги с понятными целями.",
+            "Разбей задачу на логические этапы.",
+            "Для каждого шага укажи:",
+            "- id: уникальный номер",
+            "- title: краткое описание",
+            "- tool: инструмент (fs.read, fs.write, git.run, shell.run, http.get, analysis)",
+            "- args: аргументы для инструмента",
+            "- expected_output: ожидаемый результат",
+            "Верни только валидный JSON без лишнего текста.",
             f"Задача: {task}",
         ]
         if context.get("project_root"):
             instructions.append(f"Проект: {context['project_root']}")
         return "\n".join(instructions)
 
-    def _parse_plan(self, response: str) -> List[Dict]:
-        lines = [line.strip() for line in response.splitlines() if line.strip()]
-        steps = []
-        for index, line in enumerate(lines, 1):
-            if line.lower().startswith("шаг") or line[0].isdigit():
-                steps.append({"id": index, "title": line, "status": "pending"})
-            elif len(steps) < 1:
-                steps.append({"id": index, "title": line, "status": "pending"})
-        if not steps:
-            steps = [{"id": 1, "title": response.strip(), "status": "pending"}]
-        return steps
+    def _parse_plan(self, response: str) -> Plan:
+        try:
+            # Try to extract JSON from response
+            start = response.find("{")
+            end = response.rfind("}") + 1
+            if start == -1 or end == 0:
+                raise ValueError("No JSON found in response")
+            json_str = response[start:end]
+            data = json.loads(json_str)
+            plan = Plan(**data)
+            return plan
+        except (json.JSONDecodeError, ValidationError, ValueError) as e:
+            self.logger.error(f"Failed to parse plan: {e}")
+            raise ValueError(f"Invalid plan format: {e}")

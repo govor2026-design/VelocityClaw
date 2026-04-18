@@ -42,6 +42,13 @@ class Settings:
     allowed_users: List[str] = field(default_factory=list)
     default_model: str = "code"
     lightweight_mode: bool = False
+    workspace_root: str = "."
+    allowed_hosts: List[str] = field(default_factory=lambda: ["api.github.com", "raw.githubusercontent.com"])
+    command_timeout: int = 120
+    max_file_size: int = 10 * 1024 * 1024  # 10MB
+    max_http_response_bytes: int = 5 * 1024 * 1024  # 5MB
+    shell_enabled: bool = True
+    git_enabled: bool = True
 
     def __post_init__(self):
         self.env = os.getenv("ENV", self.env)
@@ -63,6 +70,13 @@ class Settings:
         self.allowed_users = parse_list(os.getenv("ALLOWED_USERS"))
         self.default_model = os.getenv("DEFAULT_MODEL", self.default_model)
         self.lightweight_mode = parse_bool(os.getenv("LIGHTWEIGHT_MODE"), self.lightweight_mode)
+        self.workspace_root = os.getenv("WORKSPACE_ROOT", self.workspace_root)
+        self.allowed_hosts = parse_list(os.getenv("ALLOWED_HOSTS")) or self.allowed_hosts
+        self.command_timeout = int(os.getenv("COMMAND_TIMEOUT", self.command_timeout))
+        self.max_file_size = int(os.getenv("MAX_FILE_SIZE", self.max_file_size))
+        self.max_http_response_bytes = int(os.getenv("MAX_HTTP_RESPONSE_BYTES", self.max_http_response_bytes))
+        self.shell_enabled = parse_bool(os.getenv("SHELL_ENABLED"), self.shell_enabled)
+        self.git_enabled = parse_bool(os.getenv("GIT_ENABLED"), self.git_enabled)
 
     @property
     def provider_order(self) -> List[str]:

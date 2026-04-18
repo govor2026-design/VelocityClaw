@@ -1,0 +1,17 @@
+[Unit]
+Description=Velocity Claw AI Agent
+After=network.target
+
+[Service]
+Type=simple
+# Замените <your-user> и путь на реальные значения вашего VPS
+WorkingDirectory=/home/<your-user>/VelocityClaw
+ExecStart=/home/<your-user>/VelocityClaw/.venv/bin/python /home/<your-user>/VelocityClaw/cli.py --server
+Restart=always
+RestartSec=5s
+EnvironmentFile=/home/<your-user>/VelocityClaw/.env
+StandardOutput=append:/home/<your-user>/VelocityClaw/velocity_claw.log
+StandardError=append:/home/<your-user>/VelocityClaw/velocity_claw.log
+
+[Install]
+WantedBy=multi-user.target

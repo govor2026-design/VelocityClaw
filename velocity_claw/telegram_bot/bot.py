@@ -33,6 +33,22 @@ class VelocityClawTelegramBot:
         self.app.add_handler(CommandHandler("task", self.task))
         self.app.add_handler(MessageHandler(filters.Document.ALL | filters.TEXT & ~filters.COMMAND, self.receive_message))
 
+    def _append_signature(self, text: str) -> str:
+        return f"{text.rstrip()}\n\nvelocity claw"
+
+    async def _reply(self, update, text: str):
+        return await update.message.reply_text(self._append_signature(text))
+
+    def _format_report(self, report: dict) -> str:
+        lines = [f"Задача: {report.get('task')}", f"Статус: {report.get('status')}" ]
+        summary = report.get('summary', '')
+        if summary:
+            lines.append(f"Итог: {summary}")
+        plan = report.get('plan', '')
+        if plan:
+            lines.append(f"План: {plan}")
+        return "\n".join(lines)
+
     async def _check_access(self, update) -> bool:
         if not self.settings.telegram_chat_id:
             return True
@@ -40,75 +56,76 @@ class VelocityClawTelegramBot:
 
     async def start(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
-        await update.message.reply_text("Velocity Claw active. Отправь /help для списка команд.")
+            return await self._reply(update, "Access denied.")
+        await self._reply(update, "Velocity Claw active. Отправь /help для списка команд.")
 
     async def help(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
-        await update.message.reply_text(
+            return await self._reply(update, "Access denied.")
+        await self._reply(
+            update,
             "/start\n/help\n/status\n/model\n/reset\n/task <описание>\n/plan\n/logs\n/stop"
         )
 
     async def status(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
+            return await self._reply(update, "Access denied.")
         status = self.agent.get_status()
-        await update.message.reply_text(str(status))
+        await self._reply(update, str(status))
 
     async def model(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
-        await update.message.reply_text(f"Active model route: {self.agent.router.choose_provider('analysis')}")
+            return await self._reply(update, "Access denied.")
+        await self._reply(update, f"Active model route: {self.agent.router.choose_provider('analysis')}")
 
     async def reset(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
+            return await self._reply(update, "Access denied.")
         result = self.agent.reset_context()
-        await update.message.reply_text(str(result))
+        await self._reply(update, str(result))
 
     async def plan(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
+            return await self._reply(update, "Access denied.")
         task = " ".join(context.args) if getattr(context, "args", None) else None
         if not task:
-            return await update.message.reply_text("Укажите задачу после /plan.")
+            return await self._reply(update, "Укажите задачу после /plan.")
         plan = await self.agent.planner.create_plan(task)
-        await update.message.reply_text(f"Plan:\n{plan}")
+        await self._reply(update, f"Plan:\n{plan}")
 
     async def logs(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
-        await update.message.reply_text("Logs available in velocity_claw/logs/velocity_claw.log")
+            return await self._reply(update, "Access denied.")
+        await self._reply(update, "Logs available in velocity_claw/logs/velocity_claw.log")
 
     async def stop(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
-        await update.message.reply_text("Velocity Claw остановлен вручную.")
+            return await self._reply(update, "Access denied.")
+        await self._reply(update, "Velocity Claw остановлен вручную.")
         await self.app.stop()
 
     async def task(self, update, context):
         if not await self._check_access(update):
-            return await update.message.reply_text("Access denied.")
+            return await self._reply(update, "Access denied.")
         task = " ".join(context.args) if getattr(context, "args", None) else None
         if not task and update.message.text:
             task = update.message.text.replace("/task", "", 1).strip()
         if not task:
-            return await update.message.reply_text("Укажите описание задачи после /task.")
-        await update.message.reply_text("Принято. Запускаю Velocity Claw.")
+            return await self._reply(update, "Укажите описание задачи после /task.")
+        await self._reply(update, "Принято. Запускаю Velocity Claw.")
         report = await self.agent.run_task(task)
-        await update.message.reply_text(f"Результат:\n{report}")
+        await self._reply(update, self._format_report(report))
 
     async def receive_message(self, update, context):
         if not await self._check_access(update):
             return
         text = update.message.text or ""
         if text.strip():
-            await update.message.reply_text("Принято. Обрабатываю задачу.")
+            await self._reply(update, "Принято. Обрабатываю задачу.")
             report = await self.agent.run_task(text)
-            await update.message.reply_text(f"Результат:\n{report}")
+            await self._reply(update, self._format_report(report))
         elif getattr(update.message, "document", None):
-            await update.message.reply_text("Файл принят. Сейчас не поддерживается прямое выполнение вложений.")
+            await self._reply(update, "Файл принят. Сейчас не поддерживается прямое выполнение вложений.")
 
     def run(self):
         self.app.run_polling()
