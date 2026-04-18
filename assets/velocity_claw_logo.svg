@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 240">
+  <rect width="640" height="240" fill="#0f172a"/>
+  <path d="M120 180 L180 80 L260 140 L340 60 L420 120 L520 30 L560 40 L440 170 L360 120 L280 200 Z" fill="#fbbf24" stroke="#f8fafc" stroke-width="8"/>
+  <text x="60" y="220" fill="#f8fafc" font-family="Segoe UI, Arial, sans-serif" font-size="38" font-weight="700">Velocity Claw</text>
+</svg>
