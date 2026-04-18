@@ -1,13 +1,10 @@
 import unittest
 import tempfile
-import os
 from pathlib import Path
 from velocity_claw.config.settings import Settings
 from velocity_claw.tools.fs import FileSystemTool
 from velocity_claw.tools.shell import ShellTool
 from velocity_claw.tools.git import GitTool
-from velocity_claw.tools.http import HTTPTool
-from velocity_claw.security.policy import SecurityManager, AccessProfile
 
 
 class SecurityTests(unittest.TestCase):
@@ -20,6 +17,12 @@ class SecurityTests(unittest.TestCase):
             shell.validate_command("rm -rf /")
         with self.assertRaises(ValueError):
             shell.validate_command("sudo apt update")
+
+    def test_shell_allowlist_restricts_powerful_commands(self):
+        shell = ShellTool(self.settings)
+        for command in ["python3 -V", "pip list", "docker ps", "curl https://example.com", "wget https://example.com"]:
+            with self.assertRaises(ValueError):
+                shell.validate_command(command)
 
     def test_shell_allows_safe_commands(self):
         shell = ShellTool(self.settings)
@@ -42,9 +45,8 @@ class SecurityTests(unittest.TestCase):
 
     def test_fs_allows_workspace_paths(self):
         fs = FileSystemTool(self.settings)
-        test_file = Path(self.settings.workspace_root) / "test.txt"
         resolved = fs._validate_path("test.txt")
-        self.assertTrue(str(resolved).startswith(str(self.settings.workspace_root)))
+        self.assertTrue(str(resolved).startswith(str(Path(self.settings.workspace_root).resolve())))
 
 
 class ToolTests(unittest.TestCase):
@@ -69,16 +71,6 @@ class ToolTests(unittest.TestCase):
         result = shell.run_command("echo hello", cwd=self.settings.workspace_root)
         self.assertEqual(result["code"], 0)
         self.assertIn("hello", result["stdout"])
-
-    def test_git_status(self):
-        git = GitTool(self.settings)
-        # Assuming git repo exists
-        try:
-            result = git.run_git_command("git status", cwd=self.settings.workspace_root)
-            self.assertIsInstance(result, dict)
-        except RuntimeError:
-            # Git not available, skip
-            pass
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-import asyncio
 import json
 from typing import Dict, List
 from pydantic import BaseModel, ValidationError
@@ -29,7 +28,8 @@ class Planner:
         context = context or {}
         prompt = self._build_plan_prompt(task, context)
         response = await self.router.route("planning", prompt)
-        plan = self._parse_plan(response)
+        text = response.get("text", "") if isinstance(response, dict) else str(response)
+        plan = self._parse_plan(text)
         return plan.dict()
 
     def _build_plan_prompt(self, task: str, context: Dict) -> str:
@@ -50,16 +50,13 @@ class Planner:
         return "\n".join(instructions)
 
     def _parse_plan(self, response: str) -> Plan:
+        raw = response.strip()
+        if not raw.startswith("{") or not raw.endswith("}"):
+            self.logger.error("Planner returned non-JSON response")
+            raise ValueError("Invalid plan format: expected pure JSON object")
         try:
-            # Try to extract JSON from response
-            start = response.find("{")
-            end = response.rfind("}") + 1
-            if start == -1 or end == 0:
-                raise ValueError("No JSON found in response")
-            json_str = response[start:end]
-            data = json.loads(json_str)
-            plan = Plan(**data)
-            return plan
+            data = json.loads(raw)
+            return Plan(**data)
         except (json.JSONDecodeError, ValidationError, ValueError) as e:
-            self.logger.error(f"Failed to parse plan: {e}")
+            self.logger.error("Failed to parse plan: %s", e)
             raise ValueError(f"Invalid plan format: {e}")
