@@ -1,7 +1,7 @@
 # Velocity Claw
 
 <div align="center">
-  <img src="assets/falcon_logo.svg" alt="Velocity Claw - AI Agent" width="300" height="300"/>
+  <img src="assets/Velocity Claw.png" alt="Velocity Claw - Falcon" width="400"/>
 </div>
 
 Velocity Claw — это production-ready AI-агент с архитектурой для реальной работы на Windows, Linux и сервере/VPS. Он ориентирован на высокую автономность, разбиение сложных задач на этапы, выполнение операций с файлами, кодом, API, Git и shell.
