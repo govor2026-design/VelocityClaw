@@ -204,6 +204,8 @@ def create_app() -> FastAPI:
         recent = app.state.agent.memory.list_recent_runs(limit=10)
         approvals = app.state.agent.list_pending_approvals()
         profile = app.state.profiles.get_capability_matrix()
+        metrics_snapshot = app.state.metrics.snapshot()
+        last_failed = app.state.agent.resume_last_failed_run()
 
         def badge(status: str) -> str:
             return f"<span style='padding:2px 8px;border-radius:999px;border:1px solid #999'>{status}</span>"
@@ -212,10 +214,17 @@ def create_app() -> FastAPI:
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
-            "<h2>Active profile matrix</h2>",
-            f"<p>{profile['description']}</p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a></p>",
+            "<h2>Metrics</h2>",
             "<ul>",
         ]
+        for key, value in metrics_snapshot.items():
+            body.append(f"<li>{key}: <b>{value}</b></li>")
+        body.append("</ul>")
+
+        body.append("<h2>Active profile matrix</h2>")
+        body.append(f"<p>{profile['description']}</p>")
+        body.append("<ul>")
         for key, value in profile["capabilities"].items():
             body.append(f"<li>{key}: <b>{value}</b></li>")
         body.append("</ul>")
@@ -228,6 +237,12 @@ def create_app() -> FastAPI:
                 f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td></tr>"
             )
         body.append("</table>")
+
+        body.append("<h2>Last failed run</h2>")
+        if last_failed:
+            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])}</p>")
+        else:
+            body.append("<p>No failed runs recorded.</p>")
 
         body.append("<h2>Pending approvals</h2>")
         if approvals:
