@@ -203,17 +203,45 @@ def create_app() -> FastAPI:
     def dashboard():
         recent = app.state.agent.memory.list_recent_runs(limit=10)
         approvals = app.state.agent.list_pending_approvals()
-        body = ["<html><body><h1>Velocity Claw Dashboard</h1>"]
-        body.append(f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>")
-        body.append("<h2>Recent runs</h2><ul>")
+        profile = app.state.profiles.get_capability_matrix()
+
+        def badge(status: str) -> str:
+            return f"<span style='padding:2px 8px;border-radius:999px;border:1px solid #999'>{status}</span>"
+
+        body = [
+            "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
+            "<h1>Velocity Claw Dashboard</h1>",
+            f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
+            "<h2>Active profile matrix</h2>",
+            f"<p>{profile['description']}</p>",
+            "<ul>",
+        ]
+        for key, value in profile["capabilities"].items():
+            body.append(f"<li>{key}: <b>{value}</b></li>")
+        body.append("</ul>")
+
+        body.append("<h2>Recent runs</h2>")
+        body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th></tr>")
         for run in recent:
-            body.append(f"<li>{run['run_id']} — {run['task']} — <b>{run['status']}</b></li>")
-        body.append("</ul>")
-        body.append("<h2>Pending approvals</h2><ul>")
-        for item in approvals:
-            reason = (item.get("result") or {}).get("reason") if isinstance(item.get("result"), dict) else None
-            body.append(f"<li>{item['run_id']} / step {item['step_id']} — {item['title']} ({item['tool']}) — reason: {reason or 'n/a'}</li>")
-        body.append("</ul>")
+            body.append(
+                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td></tr>"
+            )
+        body.append("</table>")
+
+        body.append("<h2>Pending approvals</h2>")
+        if approvals:
+            body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+            body.append("<tr><th>Run ID</th><th>Step</th><th>Tool</th><th>Reason</th></tr>")
+            for item in approvals:
+                reason = (item.get("result") or {}).get("reason") if isinstance(item.get("result"), dict) else None
+                body.append(
+                    f"<tr><td><code>{item['run_id']}</code></td><td>{item['title']}</td><td>{item['tool']}</td><td>{reason or 'n/a'}</td></tr>"
+                )
+            body.append("</table>")
+        else:
+            body.append("<p>No pending approvals.</p>")
+
         body.append("</body></html>")
         return "".join(body)
 
