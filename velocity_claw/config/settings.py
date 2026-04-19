@@ -49,6 +49,8 @@ class Settings:
     max_http_response_bytes: int = 5 * 1024 * 1024  # 5MB
     shell_enabled: bool = True
     git_enabled: bool = True
+    dry_run: bool = False
+    execution_profile: str = "safe"
 
     def __post_init__(self):
         self.env = os.getenv("ENV", self.env)
@@ -77,6 +79,8 @@ class Settings:
         self.max_http_response_bytes = int(os.getenv("MAX_HTTP_RESPONSE_BYTES", self.max_http_response_bytes))
         self.shell_enabled = parse_bool(os.getenv("SHELL_ENABLED"), self.shell_enabled)
         self.git_enabled = parse_bool(os.getenv("GIT_ENABLED"), self.git_enabled)
+        self.dry_run = parse_bool(os.getenv("DRY_RUN"), self.dry_run)
+        self.execution_profile = os.getenv("EXECUTION_PROFILE", self.execution_profile)
 
     @property
     def provider_order(self) -> List[str]:
