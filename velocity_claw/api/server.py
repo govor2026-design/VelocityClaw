@@ -9,6 +9,7 @@ from velocity_claw.core.queue import RunQueue
 from velocity_claw.core.metrics import MetricsRegistry
 from velocity_claw.logs.logger import get_logger
 from velocity_claw.security.policy import SecurityViolationError
+from velocity_claw.security.access import ExecutionProfileManager
 
 
 class TaskRequest(BaseModel):
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
     app.state.agent = VelocityClawAgent(settings=settings)
     app.state.queue = RunQueue()
     app.state.metrics = MetricsRegistry()
+    app.state.profiles = ExecutionProfileManager(settings)
 
     @app.get("/health")
     def health():
@@ -119,6 +121,19 @@ def create_app() -> FastAPI:
     @app.get("/modes")
     def modes():
         return {"modes": app.state.agent.get_status()["available_modes"]}
+
+    @app.get("/profiles")
+    def profiles():
+        return {"active": app.state.settings.execution_profile, "profiles": app.state.profiles.list_profiles()}
+
+    @app.get("/profiles/active")
+    def active_profile():
+        return app.state.profiles.get_capability_matrix()
+
+    @app.get("/profiles/explain/{tool_name}")
+    def explain_profile_tool(tool_name: str):
+        tool = tool_name.replace("__", ".")
+        return app.state.profiles.explain_tool_access(tool)
 
     @app.post("/queue/submit")
     async def queue_submit(request: TaskRequest):
