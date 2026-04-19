@@ -67,6 +67,7 @@ class VelocityClawAgent:
                     results.append(step_result)
                     self.memory.save_step(run_id, step_result)
                     self.memory.save_artifact(run_id, f"approval_step_{step_id}", str(approval), step_id=step_id, artifact_type="approval")
+                    self.memory.save_approval_decision(run_id, step_id, "requested", actor=None, reason=approval.get("reason"), payload=approval)
                     break
 
                 if not self.profile_manager.is_tool_allowed(step.get("tool", ""), profile_name):
@@ -160,14 +161,32 @@ class VelocityClawAgent:
     def list_pending_approvals(self):
         return self.memory.list_pending_approvals()
 
-    def approve_step(self, run_id: str, step_id: int, actor: str = "owner") -> dict:
-        payload = {"decision": "approved", "actor": actor, "decided_at": datetime.now().isoformat()}
+    def get_approval_history(self, run_id: str):
+        return self.memory.load_approval_history(run_id)
+
+    def approve_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
+        payload = {
+            "decision": "approved",
+            "actor": actor,
+            "reason": reason,
+            "decided_at": datetime.now().isoformat(),
+            "resume_status": "manual_resume_required",
+        }
         self.memory.update_step_status(run_id, step_id, "approved", result=payload)
+        self.memory.save_approval_decision(run_id, step_id, "approved", actor=actor, reason=reason, payload=payload)
+        self.memory.save_artifact(run_id, f"approval_decision_step_{step_id}", str(payload), step_id=step_id, artifact_type="approval")
         return payload
 
-    def reject_step(self, run_id: str, step_id: int, actor: str = "owner") -> dict:
-        payload = {"decision": "rejected", "actor": actor, "decided_at": datetime.now().isoformat()}
+    def reject_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
+        payload = {
+            "decision": "rejected",
+            "actor": actor,
+            "reason": reason,
+            "decided_at": datetime.now().isoformat(),
+        }
         self.memory.update_step_status(run_id, step_id, "rejected", result=payload, error="Rejected by reviewer")
+        self.memory.save_approval_decision(run_id, step_id, "rejected", actor=actor, reason=reason, payload=payload)
+        self.memory.save_artifact(run_id, f"approval_decision_step_{step_id}", str(payload), step_id=step_id, artifact_type="approval")
         return payload
 
     def get_status(self) -> Dict:
