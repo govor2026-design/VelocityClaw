@@ -199,3 +199,9 @@ Near-term evolution should move toward this flow:
 **task -> planner -> security -> symbol navigation -> patch edit -> diff -> test run -> failure parse -> memory/artifacts -> summary**
 
 That path gives VelocityClaw the strongest practical improvement as a development agent.
+
+
+## Current Maturity
+
+VelocityClaw is currently best described as an **advanced MVP / strong foundation+**.
+It now includes code-editing, test-running, symbol navigation, auto-fix, profile gating, approval foundations, dashboard foundations, queue foundations, and artifacts, but still has room to grow into a fuller product/runtime system.
