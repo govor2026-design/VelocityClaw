@@ -4,144 +4,147 @@
   <img src="assets/velocity_claw_falcon.png" alt="Velocity Claw - Falcon" width="400"/>
 </div>
 
-Velocity Claw — это production-ready AI-агент с архитектурой для реальной работы на Windows, Linux и сервере/VPS. Он ориентирован на высокую автономность, разбиение сложных задач на этапы, выполнение операций с файлами, кодом, API, Git и shell.
+Velocity Claw — AI-агент с модульной архитектурой для автономного выполнения задач: работа с файлами, shell-командами, Git, HTTP-запросами и LLM-провайдерами. Проект находится в стадии **strong foundation / MVP** — ядро работает и покрыто тестами, часть расширенных возможностей задокументирована как roadmap.
 
-## Ключевые возможности
+## Что реально реализовано
 
-- Модульная архитектура: `core`, `planner`, `executor`, `models`, `tools`, `memory`, `telegram_bot`, `api`, `config`, `logs`, `prompts`, `security`
-- Поддержка OpenAI, OpenRouter, Anthropic, Gemini и локальных моделей через Ollama
-- Telegram-бот для управления задачами
-- REST API на FastAPI
-- Локальный CLI
-- Память задач и предпочтений через SQLite
-- Безопасные режимы `safe mode`, `dev mode`, `trusted mode`
-- Инструменты: файловая система, shell, Python execution, Git, HTTP, кодовый поиск, JSON/YAML, Markdown, Docker
+### Ядро агента
+- `core/agent.py` — планирование → исполнение → сохранение в памяти
+- `planner/planner.py` — LLM-разбивка задачи на шаги (JSON-план)
+- `executor/executor.py` — исполнение шагов по типу инструмента
+- `models/router.py` — маршрутизация запросов между LLM-провайдерами с fallback
+- `memory/store.py` — SQLite: runs, steps, preferences, artifacts
+- `security/policy.py` — профили доступа, валидация путей/команд/URL
+
+### Инструменты (реально работают)
+- `tools/fs.py` — чтение, запись, append, replace, поиск по содержимому, list_dir
+- `tools/shell.py` — безопасный запуск shell-команд (allowlist: ls, pwd, echo, grep, find и др.)
+- `tools/git.py` — безопасные git-команды (status, diff, add, commit, branch, log)
+- `tools/http.py` — GET/POST с ограничением по размеру ответа и allowlist хостов
+- `tools/docker.py` — валидация и запуск docker-команд (реализован, но не подключён к executor)
+- `tools/editor.py` — вспомогательный редактор файлов
+
+### Интерфейсы
+- `api/server.py` — REST API на FastAPI (`/health`, `/task`, `/status`, `/reset`)
+- `telegram_bot/bot.py` — Telegram-бот (python-telegram-bot)
+- `cli.py` — CLI: `--task`, `--server`, `--telegram`, `--status`
+
+### Режимы и конфигурация
+- `safe_mode`, `dev_mode`, `trusted_mode` — флаги в Settings, читаются из `.env`
+- `LOG_LEVEL` — управление уровнем логирования через env
+- `logs/logger.py` — централизованный логгер без дублирования handlers
+
+### Поддерживаемые LLM-провайдеры
+- OpenAI, OpenRouter, Anthropic, Gemini, Ollama (с автоматическим fallback)
+
+## Что пока только в документации / roadmap
+
+Следующие возможности описаны в spec-документах, но **не реализованы в коде**:
+
+| Возможность | Документ | Статус |
+|---|---|---|
+| Patch engine (автопатчинг кода) | `PATCH_ENGINE_SPEC.md` | spec only |
+| Test runner (авторепорт по тестам) | `TEST_RUNNER_SPEC.md` | spec only |
+| Symbol-aware navigation | `SYMBOL_NAV_SPEC.md` | spec only |
+| Auto-fix loop | `AUTO_FIX_LOOP_SPEC.md` | spec only |
+| Dashboard (веб-интерфейс) | `DASHBOARD_SPEC.md` | spec only |
+| Approval workflow | `APPROVAL_WORKFLOW_SPEC.md` | spec only |
+| Execution profiles | `EXECUTION_PROFILES_SPEC.md` | spec only |
+| Python execution tool | — | не реализован |
+| Кодовый поиск (symbol search) | — | только текстовый grep в `fs.search` |
+| JSON/YAML tooling | — | только `fs.to_json` / `fs.write_json` |
+| Markdown tooling | — | не реализован |
 
 ## Установка
 
-### Windows PowerShell
-
-```powershell
-cd C:\Users\gavar\VelocityClaw
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-copy .env.example .env
-```
-
-### Linux / bash
-
 ```bash
-cd ~/VelocityClaw
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
+cp .env.example .env        # заполните ключи
 ```
 
-## Настройка API ключей
+## Настройка `.env`
 
-Заполните `.env`:
+```
+OPENAI_API_KEY=...
+OPENROUTER_API_KEY=...
+ANTHROPIC_API_KEY=...
+GEMINI_API_KEY=...
+OLLAMA_URL=http://127.0.0.1:11434
 
-- `TELEGRAM_TOKEN` — токен бота Telegram
-- `TELEGRAM_CHAT_ID` — ваш Telegram chat id для контроля доступа
-- `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`
-- `OLLAMA_URL` — endpoint локального сервера Ollama, если есть
+TELEGRAM_TOKEN=...
+TELEGRAM_CHAT_ID=...
+
+LOG_LEVEL=INFO
+SAFE_MODE=true
+MEMORY_ENABLED=true
+WORKSPACE_ROOT=.
+```
 
 ## Запуск
 
-### CLI
-
+### CLI — выполнить задачу
 ```bash
-python cli.py --task "Анализ проекта и рефакторинг основных модулей"
+python cli.py --task "Проанализируй структуру проекта"
 ```
 
-### FastAPI
-
+### CLI — REST API сервер
 ```bash
 python cli.py --server
+# API: http://127.0.0.1:8000
 ```
 
-API доступен на `http://127.0.0.1:8000`
-
-### Telegram
-
+### CLI — Telegram-бот
 ```bash
 python cli.py --telegram
 ```
 
-## Docker
-
+### Docker
 ```bash
 docker build -t velocity-claw .
 docker run --env-file .env -p 8000:8000 velocity-claw
 ```
 
-## Развертывание на VPS
-
-### Вариант 1: Python виртуальное окружение
+## API
 
 ```bash
-cd ~/VelocityClaw
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# заполните .env реальными ключами
-python cli.py --server
-```
+# Здоровье
+curl http://127.0.0.1:8000/health
 
-Для службы systemd используйте файл `deploy/velocity_claw.service` и запустите:
+# Запустить задачу
+curl -X POST http://127.0.0.1:8000/task \
+  -H "Content-Type: application/json" \
+  -d '{"task": "Проанализируй текущую структуру проекта"}'
 
-```bash
-sudo cp deploy/velocity_claw.service /etc/systemd/system/velocity_claw.service
-sudo systemctl daemon-reload
-sudo systemctl enable velocity_claw.service
-sudo systemctl start velocity_claw.service
-sudo systemctl status velocity_claw.service
-```
-
-### Вариант 2: Docker Compose
-
-```bash
-docker compose up -d
-```
-
-Docker Compose автоматически перезапустит контейнер при сбоях.
-
-## Telegram-бот: команды
-
-- `/start` — запуск бота
-- `/help` — инструкция
-- `/status` — текущее состояние
-- `/model` — текущая модель/настройки
-- `/reset` — сброс памяти текущей задачи
-- `/task` — выполнить задачу
-- `/plan` — показать план задачи
-- `/logs` — показать последние логи
-- `/stop` — остановить выполнение
-
-## Структура проекта
-
-- `velocity_claw/config` — конфигурация через `.env`
-- `velocity_claw/core` — ядро агентной логики
-- `velocity_claw/planner` — декомпозиция целей
-- `velocity_claw/executor` — исполнение и проверка шагов
-- `velocity_claw/models` — роутинг и интеграции моделей
-- `velocity_claw/tools` — системные инструменты
-- `velocity_claw/memory` — краткосрочная и долговременная память
-- `velocity_claw/telegram_bot` — Telegram интерфейс
-- `velocity_claw/api` — REST API
-- `velocity_claw/security` — контроль доступа и подтверждений
-
-## Примеры запросов к API
-
-```bash
-curl -X POST http://127.0.0.1:8000/task -H "Content-Type: application/json" -d '{"task": "Проанализируй текущую структуру проекта и предложи улучшения"}'
+# Статус агента
+curl http://127.0.0.1:8000/status
 ```
 
 ## Тесты
 
 ```bash
+python -m pytest tests/ -q
+# или
 python -m unittest discover tests
+```
+
+Все 18 тестов проходят: agent, planner, router, tools, memory.
+
+## Структура проекта
+
+```
+velocity_claw/
+  config/      — Settings, load_settings
+  core/        — VelocityClawAgent, runner
+  planner/     — Planner, prompts
+  executor/    — Executor
+  models/      — ModelRouter, providers
+  tools/       — fs, shell, git, http, docker, editor
+  memory/      — MemoryStore (SQLite)
+  security/    — SecurityManager, AccessProfile
+  logs/        — get_logger
+  prompts/     — system, safe_mode
+  api/         — FastAPI server
+  telegram_bot/— Telegram bot
 ```
