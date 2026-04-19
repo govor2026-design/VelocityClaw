@@ -9,6 +9,7 @@ from velocity_claw.core.queue import RunQueue
 from velocity_claw.core.metrics import MetricsRegistry
 from velocity_claw.logs.logger import get_logger
 from velocity_claw.security.policy import SecurityViolationError
+from velocity_claw.security.access import ExecutionProfileManager
 
 
 class TaskRequest(BaseModel):
@@ -66,6 +67,11 @@ class ModeRequest(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
 
+class ApprovalDecisionRequest(BaseModel):
+    actor: str = "owner"
+    reason: Optional[str] = None
+
+
 def create_app() -> FastAPI:
     settings = load_settings()
     app = FastAPI(title="Velocity Claw API")
@@ -74,6 +80,7 @@ def create_app() -> FastAPI:
     app.state.agent = VelocityClawAgent(settings=settings)
     app.state.queue = RunQueue()
     app.state.metrics = MetricsRegistry()
+    app.state.profiles = ExecutionProfileManager(settings)
 
     @app.get("/health")
     def health():
@@ -114,6 +121,19 @@ def create_app() -> FastAPI:
     @app.get("/modes")
     def modes():
         return {"modes": app.state.agent.get_status()["available_modes"]}
+
+    @app.get("/profiles")
+    def profiles():
+        return {"active": app.state.settings.execution_profile, "profiles": app.state.profiles.list_profiles()}
+
+    @app.get("/profiles/active")
+    def active_profile():
+        return app.state.profiles.get_capability_matrix()
+
+    @app.get("/profiles/explain/{tool_name}")
+    def explain_profile_tool(tool_name: str):
+        tool = tool_name.replace("__", ".")
+        return app.state.profiles.explain_tool_access(tool)
 
     @app.post("/queue/submit")
     async def queue_submit(request: TaskRequest):
@@ -163,32 +183,80 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         return data
 
+    @app.get("/runs/{run_id}/approval-history")
+    def approval_history(run_id: str):
+        return {"run_id": run_id, "history": app.state.agent.get_approval_history(run_id)}
+
     @app.get("/approvals")
     def approvals():
         return {"pending": app.state.agent.list_pending_approvals()}
 
     @app.post("/approvals/{run_id}/{step_id}/approve")
-    def approve(run_id: str, step_id: int):
-        return app.state.agent.approve_step(run_id, step_id)
+    def approve(run_id: str, step_id: int, request: ApprovalDecisionRequest):
+        return app.state.agent.approve_step(run_id, step_id, actor=request.actor, reason=request.reason)
 
     @app.post("/approvals/{run_id}/{step_id}/reject")
-    def reject(run_id: str, step_id: int):
-        return app.state.agent.reject_step(run_id, step_id)
+    def reject(run_id: str, step_id: int, request: ApprovalDecisionRequest):
+        return app.state.agent.reject_step(run_id, step_id, actor=request.actor, reason=request.reason)
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard():
         recent = app.state.agent.memory.list_recent_runs(limit=10)
         approvals = app.state.agent.list_pending_approvals()
-        body = ["<html><body><h1>Velocity Claw Dashboard</h1>"]
-        body.append(f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>")
-        body.append("<h2>Recent runs</h2><ul>")
+        profile = app.state.profiles.get_capability_matrix()
+        metrics_snapshot = app.state.metrics.snapshot()
+        last_failed = app.state.agent.resume_last_failed_run()
+
+        def badge(status: str) -> str:
+            return f"<span style='padding:2px 8px;border-radius:999px;border:1px solid #999'>{status}</span>"
+
+        body = [
+            "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
+            "<h1>Velocity Claw Dashboard</h1>",
+            f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a></p>",
+            "<h2>Metrics</h2>",
+            "<ul>",
+        ]
+        for key, value in metrics_snapshot.items():
+            body.append(f"<li>{key}: <b>{value}</b></li>")
+        body.append("</ul>")
+
+        body.append("<h2>Active profile matrix</h2>")
+        body.append(f"<p>{profile['description']}</p>")
+        body.append("<ul>")
+        for key, value in profile["capabilities"].items():
+            body.append(f"<li>{key}: <b>{value}</b></li>")
+        body.append("</ul>")
+
+        body.append("<h2>Recent runs</h2>")
+        body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th></tr>")
         for run in recent:
-            body.append(f"<li>{run['run_id']} — {run['task']} — <b>{run['status']}</b></li>")
-        body.append("</ul>")
-        body.append("<h2>Pending approvals</h2><ul>")
-        for item in approvals:
-            body.append(f"<li>{item['run_id']} / step {item['step_id']} — {item['title']} ({item['tool']})</li>")
-        body.append("</ul>")
+            body.append(
+                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td></tr>"
+            )
+        body.append("</table>")
+
+        body.append("<h2>Last failed run</h2>")
+        if last_failed:
+            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])}</p>")
+        else:
+            body.append("<p>No failed runs recorded.</p>")
+
+        body.append("<h2>Pending approvals</h2>")
+        if approvals:
+            body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+            body.append("<tr><th>Run ID</th><th>Step</th><th>Tool</th><th>Reason</th></tr>")
+            for item in approvals:
+                reason = (item.get("result") or {}).get("reason") if isinstance(item.get("result"), dict) else None
+                body.append(
+                    f"<tr><td><code>{item['run_id']}</code></td><td>{item['title']}</td><td>{item['tool']}</td><td>{reason or 'n/a'}</td></tr>"
+                )
+            body.append("</table>")
+        else:
+            body.append("<p>No pending approvals.</p>")
+
         body.append("</body></html>")
         return "".join(body)
 

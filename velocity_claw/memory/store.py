@@ -80,6 +80,19 @@ class MemoryStore:
                     FOREIGN KEY (run_id) REFERENCES runs (run_id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS approval_history (
+                    id INTEGER PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    step_id INTEGER NOT NULL,
+                    decision TEXT NOT NULL,
+                    actor TEXT,
+                    reason TEXT,
+                    payload TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (run_id) REFERENCES runs (run_id)
+                )
+            """)
 
     def create_run(self, task: str) -> str:
         if not self.enabled:
@@ -137,6 +150,7 @@ class MemoryStore:
                 "steps": self.load_steps(run_id),
                 "artifacts": self.load_artifacts(run_id),
                 "fix_attempts": self.load_fix_attempts(run_id),
+                "approval_history": self.load_approval_history(run_id),
             }
 
     def load_steps(self, run_id: str):
@@ -241,6 +255,36 @@ class MemoryStore:
             for r in rows
         ]
 
+    def save_approval_decision(self, run_id: str, step_id: int, decision: str, actor: str | None = None, reason: str | None = None, payload: Any = None) -> None:
+        if not self.enabled:
+            return
+        encoded = json.dumps(payload, ensure_ascii=False) if payload is not None else None
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO approval_history (run_id, step_id, decision, actor, reason, payload) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, step_id, decision, actor, reason, encoded),
+            )
+
+    def load_approval_history(self, run_id: str):
+        if not self.enabled:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT step_id, decision, actor, reason, payload, created_at FROM approval_history WHERE run_id = ? ORDER BY id",
+                (run_id,),
+            ).fetchall()
+        return [
+            {
+                "step_id": r[0],
+                "decision": r[1],
+                "actor": r[2],
+                "reason": r[3],
+                "payload": json.loads(r[4]) if r[4] else None,
+                "created_at": r[5],
+            }
+            for r in rows
+        ]
+
     def get_last_failed_run(self) -> Optional[Dict]:
         if not self.enabled:
             return None
@@ -261,6 +305,7 @@ class MemoryStore:
             """)
             conn.execute("DELETE FROM steps WHERE run_id NOT IN (SELECT run_id FROM runs)")
             conn.execute("DELETE FROM artifacts WHERE run_id NOT IN (SELECT run_id FROM runs)")
+            conn.execute("DELETE FROM approval_history WHERE run_id NOT IN (SELECT run_id FROM runs)")
 
     def list_recent_runs(self, limit: int = 20):
         if not self.enabled:

@@ -1,3 +1,5 @@
+import asyncio
+import json
 from datetime import datetime
 from typing import Dict, Optional
 from velocity_claw.config.settings import Settings
@@ -44,6 +46,7 @@ class VelocityClawAgent:
         try:
             self.logger.info("Run %s: Planning", run_id)
             plan = await self.planner.create_plan(task, context)
+            self.memory.save_artifact(run_id, "run_plan", json.dumps(plan, ensure_ascii=False), artifact_type="plan")
             results = []
             for step in plan["steps"]:
                 step_id = step["id"]
@@ -67,7 +70,16 @@ class VelocityClawAgent:
                     results.append(step_result)
                     self.memory.save_step(run_id, step_result)
                     self.memory.save_artifact(run_id, f"approval_step_{step_id}", str(approval), step_id=step_id, artifact_type="approval")
-                    break
+                    self.memory.save_approval_decision(run_id, step_id, "requested", actor=None, reason=approval.get("reason"), payload=approval)
+                    self.memory.update_run_status(run_id, "awaiting_approval")
+                    return {
+                        "run_id": run_id,
+                        "task": task,
+                        "status": "awaiting_approval",
+                        "summary": f"Run paused at step {step_id} awaiting approval.",
+                        "steps": results,
+                        "signature": "velocity claw",
+                    }
 
                 if not self.profile_manager.is_tool_allowed(step.get("tool", ""), profile_name):
                     completed_at = datetime.now().isoformat()
@@ -160,15 +172,64 @@ class VelocityClawAgent:
     def list_pending_approvals(self):
         return self.memory.list_pending_approvals()
 
-    def approve_step(self, run_id: str, step_id: int, actor: str = "owner") -> dict:
-        payload = {"decision": "approved", "actor": actor, "decided_at": datetime.now().isoformat()}
+    def get_approval_history(self, run_id: str):
+        return self.memory.load_approval_history(run_id)
+
+    def approve_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
+        payload = {
+            "decision": "approved",
+            "actor": actor,
+            "reason": reason,
+            "decided_at": datetime.now().isoformat(),
+        }
         self.memory.update_step_status(run_id, step_id, "approved", result=payload)
+        self.memory.save_approval_decision(run_id, step_id, "approved", actor=actor, reason=reason, payload=payload)
+        self.memory.save_artifact(run_id, f"approval_decision_step_{step_id}", str(payload), step_id=step_id, artifact_type="approval")
+        resume = self.resume_after_approval(run_id, step_id)
+        payload["resume"] = resume
         return payload
 
-    def reject_step(self, run_id: str, step_id: int, actor: str = "owner") -> dict:
-        payload = {"decision": "rejected", "actor": actor, "decided_at": datetime.now().isoformat()}
+    def reject_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
+        payload = {
+            "decision": "rejected",
+            "actor": actor,
+            "reason": reason,
+            "decided_at": datetime.now().isoformat(),
+        }
         self.memory.update_step_status(run_id, step_id, "rejected", result=payload, error="Rejected by reviewer")
+        self.memory.save_approval_decision(run_id, step_id, "rejected", actor=actor, reason=reason, payload=payload)
+        self.memory.save_artifact(run_id, f"approval_decision_step_{step_id}", str(payload), step_id=step_id, artifact_type="approval")
+        self.memory.update_run_status(run_id, "rejected")
         return payload
+
+    def resume_after_approval(self, run_id: str, step_id: int) -> dict:
+        run = self.memory.load_run(run_id)
+        if not run:
+            return {"status": "failed", "error": "run_not_found"}
+        artifacts = run.get("artifacts", [])
+        plan_artifact = next((a for a in artifacts if a.get("name") == "run_plan"), None)
+        if not plan_artifact:
+            self.memory.update_run_status(run_id, "approved_waiting_manual_resume")
+            return {"status": "manual_resume_required", "reason": "run_plan_missing"}
+        try:
+            plan = json.loads(plan_artifact["content"])
+        except Exception:
+            self.memory.update_run_status(run_id, "approved_waiting_manual_resume")
+            return {"status": "manual_resume_required", "reason": "run_plan_invalid"}
+        pending_steps = [s for s in plan.get("steps", []) if s.get("id", 0) >= step_id]
+        executed = []
+        for step in pending_steps:
+            result = asyncio.run(self.executor.execute_step(step, {}))
+            result["started_at"] = result.get("started_at") or datetime.now().isoformat()
+            result["completed_at"] = datetime.now().isoformat()
+            self.memory.save_step(run_id, result)
+            self._persist_artifacts(run_id, result)
+            executed.append(result)
+            if result.get("status") == "failed":
+                self.memory.update_run_status(run_id, "failed")
+                return {"status": "failed", "executed": executed}
+        self.memory.update_run_status(run_id, "completed")
+        return {"status": "completed", "executed": executed}
 
     def get_status(self) -> Dict:
         return {
