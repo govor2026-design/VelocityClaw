@@ -55,8 +55,27 @@ class MemoryStore:
                 CREATE TABLE IF NOT EXISTS artifacts (
                     id INTEGER PRIMARY KEY,
                     run_id TEXT NOT NULL,
+                    step_id INTEGER,
                     name TEXT NOT NULL,
+                    artifact_type TEXT DEFAULT 'text',
                     content TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (run_id) REFERENCES runs (run_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS project_facts (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS fix_attempts (
+                    id INTEGER PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    attempt_no INTEGER NOT NULL,
+                    summary TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (run_id) REFERENCES runs (run_id)
                 )
@@ -116,6 +135,8 @@ class MemoryStore:
                 "created_at": run_row[3],
                 "completed_at": run_row[4],
                 "steps": self.load_steps(run_id),
+                "artifacts": self.load_artifacts(run_id),
+                "fix_attempts": self.load_fix_attempts(run_id),
             }
 
     def load_steps(self, run_id: str):
@@ -158,14 +179,76 @@ class MemoryStore:
             row = conn.execute("SELECT value FROM preferences WHERE key = ?", (key,)).fetchone()
             return json.loads(row[0]) if row else None
 
-    def save_artifact(self, run_id: str, name: str, content: str) -> None:
+    def save_artifact(self, run_id: str, name: str, content: str, step_id: int | None = None, artifact_type: str = "text") -> None:
         if not self.enabled:
             return
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT INTO artifacts (run_id, name, content) VALUES (?, ?, ?)",
-                (run_id, name, content)
+                "INSERT INTO artifacts (run_id, step_id, name, artifact_type, content) VALUES (?, ?, ?, ?, ?)",
+                (run_id, step_id, name, artifact_type, content)
             )
+
+    def load_artifacts(self, run_id: str):
+        if not self.enabled:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT step_id, name, artifact_type, content, created_at FROM artifacts WHERE run_id = ? ORDER BY id",
+                (run_id,),
+            ).fetchall()
+        return [
+            {"step_id": r[0], "name": r[1], "artifact_type": r[2], "content": r[3], "created_at": r[4]}
+            for r in rows
+        ]
+
+    def save_project_fact(self, key: str, value: Any) -> None:
+        if not self.enabled:
+            return
+        payload = json.dumps(value, ensure_ascii=False)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO project_facts (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                (key, payload),
+            )
+
+    def load_project_fact(self, key: str) -> Optional[Any]:
+        if not self.enabled:
+            return None
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute("SELECT value FROM project_facts WHERE key = ?", (key,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def save_fix_attempt(self, run_id: str, attempt_no: int, summary: Any) -> None:
+        if not self.enabled:
+            return
+        payload = json.dumps(summary, ensure_ascii=False)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO fix_attempts (run_id, attempt_no, summary) VALUES (?, ?, ?)",
+                (run_id, attempt_no, payload),
+            )
+
+    def load_fix_attempts(self, run_id: str):
+        if not self.enabled:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT attempt_no, summary, created_at FROM fix_attempts WHERE run_id = ? ORDER BY attempt_no",
+                (run_id,),
+            ).fetchall()
+        return [
+            {"attempt_no": r[0], "summary": json.loads(r[1]) if r[1] else None, "created_at": r[2]}
+            for r in rows
+        ]
+
+    def get_last_failed_run(self) -> Optional[Dict]:
+        if not self.enabled:
+            return None
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT run_id FROM runs WHERE status = 'failed' ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+        return self.load_run(row[0]) if row else None
 
     def clear_short_term(self) -> None:
         if not self.enabled:
@@ -178,3 +261,46 @@ class MemoryStore:
             """)
             conn.execute("DELETE FROM steps WHERE run_id NOT IN (SELECT run_id FROM runs)")
             conn.execute("DELETE FROM artifacts WHERE run_id NOT IN (SELECT run_id FROM runs)")
+
+    def list_recent_runs(self, limit: int = 20):
+        if not self.enabled:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT run_id, task, status, created_at, completed_at FROM runs ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {"run_id": r[0], "task": r[1], "status": r[2], "created_at": r[3], "completed_at": r[4]}
+            for r in rows
+        ]
+
+    def list_pending_approvals(self):
+        if not self.enabled:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT run_id, step_id, title, tool, args, result, started_at, completed_at FROM steps WHERE status = 'pending_approval' ORDER BY started_at DESC"
+            ).fetchall()
+        approvals = []
+        for r in rows:
+            approvals.append({
+                "run_id": r[0],
+                "step_id": r[1],
+                "title": r[2],
+                "tool": r[3],
+                "args": json.loads(r[4]) if r[4] else {},
+                "result": json.loads(r[5]) if r[5] else None,
+                "started_at": r[6],
+                "completed_at": r[7],
+            })
+        return approvals
+
+    def update_step_status(self, run_id: str, step_id: int, status: str, result: Any = None, error: str | None = None) -> None:
+        if not self.enabled:
+            return
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE steps SET status = ?, result = ?, error = ?, completed_at = ? WHERE run_id = ? AND step_id = ?",
+                (status, json.dumps(result, ensure_ascii=False) if result is not None else None, error, datetime.now().isoformat(), run_id, step_id),
+            )
