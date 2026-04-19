@@ -66,6 +66,11 @@ class ModeRequest(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
 
+class ApprovalDecisionRequest(BaseModel):
+    actor: str = "owner"
+    reason: Optional[str] = None
+
+
 def create_app() -> FastAPI:
     settings = load_settings()
     app = FastAPI(title="Velocity Claw API")
@@ -163,17 +168,21 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         return data
 
+    @app.get("/runs/{run_id}/approval-history")
+    def approval_history(run_id: str):
+        return {"run_id": run_id, "history": app.state.agent.get_approval_history(run_id)}
+
     @app.get("/approvals")
     def approvals():
         return {"pending": app.state.agent.list_pending_approvals()}
 
     @app.post("/approvals/{run_id}/{step_id}/approve")
-    def approve(run_id: str, step_id: int):
-        return app.state.agent.approve_step(run_id, step_id)
+    def approve(run_id: str, step_id: int, request: ApprovalDecisionRequest):
+        return app.state.agent.approve_step(run_id, step_id, actor=request.actor, reason=request.reason)
 
     @app.post("/approvals/{run_id}/{step_id}/reject")
-    def reject(run_id: str, step_id: int):
-        return app.state.agent.reject_step(run_id, step_id)
+    def reject(run_id: str, step_id: int, request: ApprovalDecisionRequest):
+        return app.state.agent.reject_step(run_id, step_id, actor=request.actor, reason=request.reason)
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard():
@@ -187,7 +196,8 @@ def create_app() -> FastAPI:
         body.append("</ul>")
         body.append("<h2>Pending approvals</h2><ul>")
         for item in approvals:
-            body.append(f"<li>{item['run_id']} / step {item['step_id']} — {item['title']} ({item['tool']})</li>")
+            reason = (item.get("result") or {}).get("reason") if isinstance(item.get("result"), dict) else None
+            body.append(f"<li>{item['run_id']} / step {item['step_id']} — {item['title']} ({item['tool']}) — reason: {reason or 'n/a'}</li>")
         body.append("</ul>")
         body.append("</body></html>")
         return "".join(body)
