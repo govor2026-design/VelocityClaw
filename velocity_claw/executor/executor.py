@@ -5,6 +5,9 @@ from velocity_claw.tools.fs import FileSystemTool
 from velocity_claw.tools.shell import ShellTool
 from velocity_claw.tools.git import GitTool
 from velocity_claw.tools.http import HTTPTool
+from velocity_claw.tools.patch import PatchEngine
+from velocity_claw.tools.code_nav import CodeNavigationTool
+from velocity_claw.tools.test_runner import TestRunnerTool
 from velocity_claw.security.policy import SecurityManager, AccessProfile
 from velocity_claw.config.settings import Settings
 
@@ -18,6 +21,9 @@ class Executor:
         self.shell = ShellTool(self.settings)
         self.git = GitTool(self.settings)
         self.http = HTTPTool(self.settings)
+        self.patch = PatchEngine(self.settings)
+        self.code_nav = CodeNavigationTool(self.settings)
+        self.test_runner = TestRunnerTool(self.settings)
         self.security = SecurityManager(self.settings)
 
     def _get_profile(self, tool: str) -> AccessProfile:
@@ -25,7 +31,7 @@ class Executor:
             return self.security.get_profile("network_allowlist")
         if tool == "git.run":
             return self.security.get_profile("git_safe")
-        if tool in ["fs.write", "fs.append", "fs.replace", "shell.run"]:
+        if tool in ["fs.write", "fs.append", "fs.replace", "shell.run", "patch.apply", "test.run"]:
             return self.security.get_profile("workspace_write")
         return self.security.get_profile("read_only")
 
@@ -66,19 +72,48 @@ class Executor:
             return {**base_result, "status": "failed", "result": None, "error": str(e)}
 
     async def _execute_tool(self, tool: str, args: Dict, profile: AccessProfile):
+        dry_run = bool(args.get("dry_run", self.settings.dry_run))
         if tool == "fs.read":
             return self.fs.read(args["path"])
         if tool == "fs.write":
+            if dry_run:
+                return {"status": "simulated", "path": args["path"]}
             return self.fs.write(args["path"], args["content"])
         if tool == "fs.append":
+            if dry_run:
+                return {"status": "simulated", "path": args["path"]}
             return self.fs.append(args["path"], args["content"])
         if tool == "fs.replace":
+            if dry_run:
+                return {"status": "simulated", "path": args["path"]}
             return self.fs.replace(args["path"], args["old_string"], args["new_string"])
+        if tool == "patch.preview":
+            return self.patch.preview(args["patch"])
+        if tool == "patch.apply":
+            return self.patch.apply(args["patch"], dry_run=dry_run)
+        if tool == "code.find_symbol":
+            return self.code_nav.find_symbol(args["name"], args.get("kind"))
+        if tool == "code.read_symbol":
+            return self.code_nav.read_symbol(args["path"], args["name"], args["kind"])
+        if tool == "code.list_imports":
+            return self.code_nav.list_imports(args["path"])
+        if tool == "test.run":
+            return self.test_runner.run(
+                args["runner"],
+                target=args.get("target"),
+                timeout=args.get("timeout", self.settings.command_timeout),
+                extra_args=args.get("extra_args"),
+                dry_run=dry_run,
+            )
         if tool == "shell.run":
             self.security.validate_command(args["command"], profile)
+            if dry_run:
+                return {"status": "simulated", "command": args["command"]}
             return self.shell.run_command(args["command"], args.get("cwd"), timeout=self.settings.command_timeout)
         if tool == "git.run":
             self.security.validate_git_command(args["command"], profile)
+            if dry_run:
+                return {"status": "simulated", "command": args["command"]}
             return self.git.run_git_command(args["command"], args.get("cwd"), timeout=self.settings.command_timeout)
         if tool == "http.get":
             self.security.validate_url(args["url"], profile)

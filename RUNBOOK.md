@@ -217,3 +217,15 @@ When in doubt:
 - prefer safe execution first
 - inspect the trace
 - debug in pipeline order
+
+
+## Additional Runtime Checks
+
+Useful endpoints to verify after changes:
+
+- `/metrics`
+- `/runs`
+- `/approvals`
+- `/dashboard`
+- `/queue/{job_id}`
+- `/modes`
