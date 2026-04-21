@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 import asyncio
+import time
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -78,12 +79,29 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.logger = get_logger("velocity_claw.api")
     app.state.agent = VelocityClawAgent(settings=settings)
-    app.state.queue = RunQueue()
+    app.state.queue = RunQueue(db_path=f"{settings.memory_db_path}.queue")
     app.state.metrics = MetricsRegistry()
     app.state.profiles = ExecutionProfileManager(settings)
 
+    def refresh_runtime_metrics() -> None:
+        approvals_pending = len(app.state.agent.list_pending_approvals())
+        queue_jobs = app.state.queue.list_jobs()
+        app.state.metrics.set_value("approvals_pending", approvals_pending)
+        app.state.metrics.set_value("queue_total", len(queue_jobs))
+        app.state.metrics.set_value("queue_running", sum(1 for job in queue_jobs if job["status"] == "running"))
+        app.state.metrics.set_value("queue_failed", sum(1 for job in queue_jobs if job["status"] == "failed"))
+        app.state.metrics.set_value("queue_cancelled", sum(1 for job in queue_jobs if job["status"] == "cancelled"))
+
+    def group_artifacts(run_data: dict) -> dict:
+        grouped: dict[str, list[dict]] = {}
+        for artifact in run_data.get("artifacts", []):
+            key = f"step_{artifact['step_id']}" if artifact.get("step_id") is not None else "run_level"
+            grouped.setdefault(key, []).append(artifact)
+        return grouped
+
     @app.get("/health")
     def health():
+        refresh_runtime_metrics()
         return {"status": "ok", "metrics": app.state.metrics.snapshot()}
 
     @app.post("/task", response_model=TaskResponse)
@@ -91,6 +109,7 @@ def create_app() -> FastAPI:
         if not request.task or not request.task.strip():
             raise HTTPException(status_code=400, detail={"status": "failed", "error": "invalid_task", "detail": "Task must not be empty"})
         app.state.metrics.incr("tasks_total")
+        started = time.monotonic()
         try:
             result = await app.state.agent.run_task(request.task, request.context)
             app.state.metrics.incr("tasks_completed")
@@ -107,16 +126,24 @@ def create_app() -> FastAPI:
             app.state.metrics.incr("tasks_failed")
             app.state.logger.error("Task execution failed: %s", e)
             raise HTTPException(status_code=500, detail={"status": "failed", "error": "internal_error", "detail": str(e)})
+        finally:
+            app.state.metrics.observe_task_duration(int((time.monotonic() - started) * 1000))
+            refresh_runtime_metrics()
 
     @app.post("/modes/run")
     async def run_mode(request: ModeRequest):
         app.state.metrics.incr("tasks_total")
-        result = await app.state.agent.run_mode(request.mode, request.task, request.context)
-        if result["status"] == "completed":
-            app.state.metrics.incr("tasks_completed")
-        else:
-            app.state.metrics.incr("tasks_failed")
-        return result
+        started = time.monotonic()
+        try:
+            result = await app.state.agent.run_mode(request.mode, request.task, request.context)
+            if result["status"] == "completed":
+                app.state.metrics.incr("tasks_completed")
+            else:
+                app.state.metrics.incr("tasks_failed")
+            return result
+        finally:
+            app.state.metrics.observe_task_duration(int((time.monotonic() - started) * 1000))
+            refresh_runtime_metrics()
 
     @app.get("/modes")
     def modes():
@@ -138,19 +165,35 @@ def create_app() -> FastAPI:
     @app.post("/queue/submit")
     async def queue_submit(request: TaskRequest):
         job = app.state.queue.enqueue(request.task, request.context)
+        refresh_runtime_metrics()
         asyncio.create_task(app.state.queue.run_job(job.job_id, app.state.agent.run_task))
         return {"job_id": job.job_id, "status": job.status}
+
+    @app.get("/queue")
+    def queue_list():
+        refresh_runtime_metrics()
+        return {"jobs": app.state.queue.list_jobs()}
 
     @app.get("/queue/{job_id}")
     def queue_status(job_id: str):
         job = app.state.queue.get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        refresh_runtime_metrics()
+        return job.__dict__
+
+    @app.post("/queue/{job_id}/cancel")
+    def queue_cancel(job_id: str):
+        job = app.state.queue.cancel(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        refresh_runtime_metrics()
         return job.__dict__
 
     @app.post("/auto-fix")
     def auto_fix(request: AutoFixRequest):
         app.state.metrics.incr("auto_fix_total")
+        refresh_runtime_metrics()
         return app.state.agent.run_auto_fix(
             target_test=request.target_test,
             patch_plan=request.patch_plan,
@@ -160,13 +203,23 @@ def create_app() -> FastAPI:
 
     @app.get("/status", response_model=StatusResponse)
     def status():
-        app.state.metrics.set_value("approvals_pending", len(app.state.agent.list_pending_approvals()))
+        refresh_runtime_metrics()
         return StatusResponse(**app.state.agent.get_status())
 
     @app.get("/metrics")
     def metrics():
-        app.state.metrics.set_value("approvals_pending", len(app.state.agent.list_pending_approvals()))
+        refresh_runtime_metrics()
         return app.state.metrics.snapshot()
+
+    @app.get("/diagnostics")
+    def diagnostics():
+        refresh_runtime_metrics()
+        return {
+            "metrics": app.state.metrics.snapshot(),
+            "diagnostics": app.state.metrics.diagnostics_summary(),
+            "last_failed_run": app.state.agent.resume_last_failed_run(),
+            "queue_jobs_preview": app.state.queue.list_jobs()[:10],
+        }
 
     @app.post("/reset", response_model=ResetResponse)
     def reset():
@@ -182,6 +235,46 @@ def create_app() -> FastAPI:
         if not data:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         return data
+
+    @app.get("/runs/{run_id}/artifacts")
+    def run_artifacts(run_id: str):
+        data = app.state.agent.memory.load_run(run_id)
+        if not data:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        return {"run_id": run_id, "grouped_artifacts": group_artifacts(data)}
+
+    @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
+    def run_detail_view(run_id: str):
+        data = app.state.agent.memory.load_run(run_id)
+        if not data:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        grouped = group_artifacts(data)
+        body = [
+            "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
+            f"<h1>Run detail: {run_id}</h1>",
+            f"<p>Task: <b>{data['task']}</b></p>",
+            f"<p>Status: <b>{data['status']}</b></p>",
+            f"<p>Created: {data['created_at']}</p>",
+            "<h2>Steps</h2>",
+            "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>",
+            "<tr><th>ID</th><th>Title</th><th>Tool</th><th>Status</th><th>Error</th></tr>",
+        ]
+        for step in data.get("steps", []):
+            body.append(f"<tr><td>{step['id']}</td><td>{step['title']}</td><td>{step.get('tool') or ''}</td><td>{step['status']}</td><td>{step.get('error') or ''}</td></tr>")
+        body.append("</table>")
+        body.append("<h2>Approval history</h2><ul>")
+        for item in data.get("approval_history", []):
+            body.append(f"<li>step {item['step_id']} — {item['decision']} — actor: {item.get('actor') or 'n/a'} — reason: {item.get('reason') or 'n/a'}</li>")
+        body.append("</ul>")
+        body.append("<h2>Artifacts</h2>")
+        for group_name, artifacts in grouped.items():
+            body.append(f"<h3>{group_name}</h3><ul>")
+            for artifact in artifacts:
+                preview = (artifact.get('content') or '')[:180].replace('<', '&lt;').replace('>', '&gt;')
+                body.append(f"<li>{artifact['name']} [{artifact['artifact_type']}]<pre>{preview}</pre></li>")
+            body.append("</ul>")
+        body.append("</body></html>")
+        return "".join(body)
 
     @app.get("/runs/{run_id}/approval-history")
     def approval_history(run_id: str):
@@ -201,11 +294,14 @@ def create_app() -> FastAPI:
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard():
+        refresh_runtime_metrics()
         recent = app.state.agent.memory.list_recent_runs(limit=10)
         approvals = app.state.agent.list_pending_approvals()
         profile = app.state.profiles.get_capability_matrix()
         metrics_snapshot = app.state.metrics.snapshot()
+        diagnostics_snapshot = app.state.metrics.diagnostics_summary()
         last_failed = app.state.agent.resume_last_failed_run()
+        queue_jobs = app.state.queue.list_jobs()[:10]
 
         def badge(status: str) -> str:
             return f"<span style='padding:2px 8px;border-radius:999px;border:1px solid #999'>{status}</span>"
@@ -214,12 +310,23 @@ def create_app() -> FastAPI:
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
             "<h2>Metrics</h2>",
             "<ul>",
         ]
         for key, value in metrics_snapshot.items():
             body.append(f"<li>{key}: <b>{value}</b></li>")
+        body.append("</ul>")
+
+        body.append("<h2>Diagnostics summary</h2><ul>")
+        for section, payload in diagnostics_snapshot.items():
+            if isinstance(payload, dict):
+                body.append(f"<li><b>{section}</b><ul>")
+                for k, v in payload.items():
+                    body.append(f"<li>{k}: <b>{v}</b></li>")
+                body.append("</ul></li>")
+            else:
+                body.append(f"<li>{section}: <b>{payload}</b></li>")
         body.append("</ul>")
 
         body.append("<h2>Active profile matrix</h2>")
@@ -229,18 +336,28 @@ def create_app() -> FastAPI:
             body.append(f"<li>{key}: <b>{value}</b></li>")
         body.append("</ul>")
 
+        body.append("<h2>Queue jobs</h2>")
+        if queue_jobs:
+            body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+            body.append("<tr><th>Job ID</th><th>Task</th><th>Status</th><th>Attempts</th></tr>")
+            for job in queue_jobs:
+                body.append(f"<tr><td><code>{job['job_id']}</code></td><td>{job['task']}</td><td>{badge(job['status'])}</td><td>{job['attempts']}</td></tr>")
+            body.append("</table>")
+        else:
+            body.append("<p>No queue jobs recorded.</p>")
+
         body.append("<h2>Recent runs</h2>")
         body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th></tr>")
+        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th></tr>")
         for run in recent:
             body.append(
-                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td></tr>"
+                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td></tr>"
             )
         body.append("</table>")
 
         body.append("<h2>Last failed run</h2>")
         if last_failed:
-            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])}</p>")
+            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a></p>")
         else:
             body.append("<p>No failed runs recorded.</p>")
 
