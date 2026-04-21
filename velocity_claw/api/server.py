@@ -162,6 +162,10 @@ def create_app() -> FastAPI:
         tool = tool_name.replace("__", ".")
         return app.state.profiles.explain_tool_access(tool)
 
+    @app.get("/memory/context")
+    def memory_context():
+        return app.state.agent.get_repo_context_summary()
+
     @app.post("/queue/submit")
     async def queue_submit(request: TaskRequest):
         job = app.state.queue.enqueue(request.task, request.context)
@@ -314,6 +318,7 @@ def create_app() -> FastAPI:
         profile = app.state.profiles.get_capability_matrix()
         metrics_snapshot = app.state.metrics.snapshot()
         diagnostics_snapshot = app.state.metrics.diagnostics_summary()
+        repo_context = app.state.agent.get_repo_context_summary()
         last_failed = app.state.agent.resume_last_failed_run()
         queue_jobs = app.state.queue.list_jobs()[:10]
 
@@ -325,7 +330,7 @@ def create_app() -> FastAPI:
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
             f"<p>Queue concurrency: <b>{app.state.queue.max_concurrency}</b> | Active workers: <b>{app.state.queue.active_count()}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/memory/context'>/memory/context</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
             "<h2>Metrics</h2>",
             "<ul>",
         ]
@@ -343,6 +348,9 @@ def create_app() -> FastAPI:
             else:
                 body.append(f"<li>{section}: <b>{payload}</b></li>")
         body.append("</ul>")
+
+        body.append("<h2>Repo context summary</h2>")
+        body.append(f"<p>Project facts: <b>{len(repo_context.get('project_facts', {}))}</b> | Recent notes: <b>{len(repo_context.get('recent_notes', []))}</b></p>")
 
         body.append("<h2>Active profile matrix</h2>")
         body.append(f"<p>{profile['description']}</p>")
