@@ -24,26 +24,12 @@ class CodeNavigationTool:
             except Exception:
                 continue
             for node in ast.walk(tree):
-                entry = None
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-                    entry = {
-                        "path": rel,
-                        "kind": "function",
-                        "name": node.name,
-                        "line_start": node.lineno,
-                        "line_end": node.end_lineno,
-                    }
-                elif isinstance(node, ast.ClassDef) and node.name == name:
-                    entry = {
-                        "path": rel,
-                        "kind": "class",
-                        "name": node.name,
-                        "line_start": node.lineno,
-                        "line_end": node.end_lineno,
-                    }
-                if entry and (kind is None or entry["kind"] == kind):
+                entry = self._build_entry(node, rel, source)
+                if not entry:
+                    continue
+                if entry["name"] == name and (kind is None or entry["kind"] == kind):
                     matches.append(entry)
-        return sorted(matches, key=lambda m: (m["path"], m["line_start"]))
+        return sorted(matches, key=lambda m: (-m["match_score"], m["path"], m["line_start"]))
 
     def read_symbol(self, path: str, name: str, kind: str) -> dict:
         source = self.fs.read(path)
@@ -51,21 +37,16 @@ class CodeNavigationTool:
         lines = source.splitlines(keepends=True)
         matches = []
         for node in ast.walk(tree):
-            if kind == "function" and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-                matches.append(node)
-            elif kind == "class" and isinstance(node, ast.ClassDef) and node.name == name:
-                matches.append(node)
+            entry = self._build_entry(node, path, source)
+            if entry and entry["kind"] == kind and entry["name"] == name:
+                matches.append((node, entry))
         if not matches:
             raise ValueError(f"{kind} '{name}' not found")
         if len(matches) > 1:
             raise ValueError(f"ambiguous {kind} '{name}'")
-        node = matches[0]
+        node, entry = matches[0]
         return {
-            "path": path,
-            "kind": kind,
-            "name": name,
-            "line_start": node.lineno,
-            "line_end": node.end_lineno,
+            **entry,
             "source": "".join(lines[node.lineno - 1: node.end_lineno]),
         }
 
@@ -92,3 +73,60 @@ class CodeNavigationTool:
                         "line": node.lineno,
                     })
         return sorted(imports, key=lambda x: x["line"])
+
+    def find_references(self, name: str) -> List[dict]:
+        refs: List[dict] = []
+        for path in self.workspace_root.rglob("*.py"):
+            rel = str(path.relative_to(self.workspace_root))
+            try:
+                source = self.fs.read(rel)
+                tree = ast.parse(source)
+            except Exception:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name) and node.id == name:
+                    refs.append({
+                        "path": rel,
+                        "name": name,
+                        "line": node.lineno,
+                        "column": node.col_offset,
+                        "context": "reference",
+                    })
+        return sorted(refs, key=lambda r: (r["path"], r["line"], r["column"]))
+
+    def explain_ambiguity(self, name: str, kind: Optional[str] = None) -> dict:
+        matches = self.find_symbol(name, kind)
+        return {
+            "name": name,
+            "kind": kind,
+            "count": len(matches),
+            "matches": matches,
+            "ambiguous": len(matches) > 1,
+        }
+
+    def _build_entry(self, node: ast.AST, path: str, source: str) -> Optional[dict]:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return {
+                "path": path,
+                "kind": "function",
+                "name": node.name,
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "is_async": isinstance(node, ast.AsyncFunctionDef),
+                "decorator_count": len(node.decorator_list),
+                "docstring": ast.get_docstring(node),
+                "match_score": 100,
+            }
+        if isinstance(node, ast.ClassDef):
+            return {
+                "path": path,
+                "kind": "class",
+                "name": node.name,
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "is_async": False,
+                "decorator_count": len(node.decorator_list),
+                "docstring": ast.get_docstring(node),
+                "match_score": 100,
+            }
+        return None
