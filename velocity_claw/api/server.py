@@ -78,7 +78,7 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.logger = get_logger("velocity_claw.api")
     app.state.agent = VelocityClawAgent(settings=settings)
-    app.state.queue = RunQueue()
+    app.state.queue = RunQueue(db_path=f"{settings.memory_db_path}.queue")
     app.state.metrics = MetricsRegistry()
     app.state.profiles = ExecutionProfileManager(settings)
 
@@ -141,9 +141,20 @@ def create_app() -> FastAPI:
         asyncio.create_task(app.state.queue.run_job(job.job_id, app.state.agent.run_task))
         return {"job_id": job.job_id, "status": job.status}
 
+    @app.get("/queue")
+    def queue_list():
+        return {"jobs": app.state.queue.list_jobs()}
+
     @app.get("/queue/{job_id}")
     def queue_status(job_id: str):
         job = app.state.queue.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        return job.__dict__
+
+    @app.post("/queue/{job_id}/cancel")
+    def queue_cancel(job_id: str):
+        job = app.state.queue.cancel(job_id)
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
         return job.__dict__
@@ -206,6 +217,7 @@ def create_app() -> FastAPI:
         profile = app.state.profiles.get_capability_matrix()
         metrics_snapshot = app.state.metrics.snapshot()
         last_failed = app.state.agent.resume_last_failed_run()
+        queue_jobs = app.state.queue.list_jobs()[:10]
 
         def badge(status: str) -> str:
             return f"<span style='padding:2px 8px;border-radius:999px;border:1px solid #999'>{status}</span>"
@@ -214,7 +226,7 @@ def create_app() -> FastAPI:
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
             "<h2>Metrics</h2>",
             "<ul>",
         ]
@@ -228,6 +240,16 @@ def create_app() -> FastAPI:
         for key, value in profile["capabilities"].items():
             body.append(f"<li>{key}: <b>{value}</b></li>")
         body.append("</ul>")
+
+        body.append("<h2>Queue jobs</h2>")
+        if queue_jobs:
+            body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+            body.append("<tr><th>Job ID</th><th>Task</th><th>Status</th><th>Attempts</th></tr>")
+            for job in queue_jobs:
+                body.append(f"<tr><td><code>{job['job_id']}</code></td><td>{job['task']}</td><td>{badge(job['status'])}</td><td>{job['attempts']}</td></tr>")
+            body.append("</table>")
+        else:
+            body.append("<p>No queue jobs recorded.</p>")
 
         body.append("<h2>Recent runs</h2>")
         body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
