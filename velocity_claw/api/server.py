@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 import asyncio
+import time
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -82,8 +83,18 @@ def create_app() -> FastAPI:
     app.state.metrics = MetricsRegistry()
     app.state.profiles = ExecutionProfileManager(settings)
 
+    def refresh_runtime_metrics() -> None:
+        approvals_pending = len(app.state.agent.list_pending_approvals())
+        queue_jobs = app.state.queue.list_jobs()
+        app.state.metrics.set_value("approvals_pending", approvals_pending)
+        app.state.metrics.set_value("queue_total", len(queue_jobs))
+        app.state.metrics.set_value("queue_running", sum(1 for job in queue_jobs if job["status"] == "running"))
+        app.state.metrics.set_value("queue_failed", sum(1 for job in queue_jobs if job["status"] == "failed"))
+        app.state.metrics.set_value("queue_cancelled", sum(1 for job in queue_jobs if job["status"] == "cancelled"))
+
     @app.get("/health")
     def health():
+        refresh_runtime_metrics()
         return {"status": "ok", "metrics": app.state.metrics.snapshot()}
 
     @app.post("/task", response_model=TaskResponse)
@@ -91,6 +102,7 @@ def create_app() -> FastAPI:
         if not request.task or not request.task.strip():
             raise HTTPException(status_code=400, detail={"status": "failed", "error": "invalid_task", "detail": "Task must not be empty"})
         app.state.metrics.incr("tasks_total")
+        started = time.monotonic()
         try:
             result = await app.state.agent.run_task(request.task, request.context)
             app.state.metrics.incr("tasks_completed")
@@ -107,16 +119,24 @@ def create_app() -> FastAPI:
             app.state.metrics.incr("tasks_failed")
             app.state.logger.error("Task execution failed: %s", e)
             raise HTTPException(status_code=500, detail={"status": "failed", "error": "internal_error", "detail": str(e)})
+        finally:
+            app.state.metrics.observe_task_duration(int((time.monotonic() - started) * 1000))
+            refresh_runtime_metrics()
 
     @app.post("/modes/run")
     async def run_mode(request: ModeRequest):
         app.state.metrics.incr("tasks_total")
-        result = await app.state.agent.run_mode(request.mode, request.task, request.context)
-        if result["status"] == "completed":
-            app.state.metrics.incr("tasks_completed")
-        else:
-            app.state.metrics.incr("tasks_failed")
-        return result
+        started = time.monotonic()
+        try:
+            result = await app.state.agent.run_mode(request.mode, request.task, request.context)
+            if result["status"] == "completed":
+                app.state.metrics.incr("tasks_completed")
+            else:
+                app.state.metrics.incr("tasks_failed")
+            return result
+        finally:
+            app.state.metrics.observe_task_duration(int((time.monotonic() - started) * 1000))
+            refresh_runtime_metrics()
 
     @app.get("/modes")
     def modes():
@@ -138,11 +158,13 @@ def create_app() -> FastAPI:
     @app.post("/queue/submit")
     async def queue_submit(request: TaskRequest):
         job = app.state.queue.enqueue(request.task, request.context)
+        refresh_runtime_metrics()
         asyncio.create_task(app.state.queue.run_job(job.job_id, app.state.agent.run_task))
         return {"job_id": job.job_id, "status": job.status}
 
     @app.get("/queue")
     def queue_list():
+        refresh_runtime_metrics()
         return {"jobs": app.state.queue.list_jobs()}
 
     @app.get("/queue/{job_id}")
@@ -150,6 +172,7 @@ def create_app() -> FastAPI:
         job = app.state.queue.get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        refresh_runtime_metrics()
         return job.__dict__
 
     @app.post("/queue/{job_id}/cancel")
@@ -157,11 +180,13 @@ def create_app() -> FastAPI:
         job = app.state.queue.cancel(job_id)
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        refresh_runtime_metrics()
         return job.__dict__
 
     @app.post("/auto-fix")
     def auto_fix(request: AutoFixRequest):
         app.state.metrics.incr("auto_fix_total")
+        refresh_runtime_metrics()
         return app.state.agent.run_auto_fix(
             target_test=request.target_test,
             patch_plan=request.patch_plan,
@@ -171,13 +196,23 @@ def create_app() -> FastAPI:
 
     @app.get("/status", response_model=StatusResponse)
     def status():
-        app.state.metrics.set_value("approvals_pending", len(app.state.agent.list_pending_approvals()))
+        refresh_runtime_metrics()
         return StatusResponse(**app.state.agent.get_status())
 
     @app.get("/metrics")
     def metrics():
-        app.state.metrics.set_value("approvals_pending", len(app.state.agent.list_pending_approvals()))
+        refresh_runtime_metrics()
         return app.state.metrics.snapshot()
+
+    @app.get("/diagnostics")
+    def diagnostics():
+        refresh_runtime_metrics()
+        return {
+            "metrics": app.state.metrics.snapshot(),
+            "diagnostics": app.state.metrics.diagnostics_summary(),
+            "last_failed_run": app.state.agent.resume_last_failed_run(),
+            "queue_jobs_preview": app.state.queue.list_jobs()[:10],
+        }
 
     @app.post("/reset", response_model=ResetResponse)
     def reset():
@@ -212,10 +247,12 @@ def create_app() -> FastAPI:
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard():
+        refresh_runtime_metrics()
         recent = app.state.agent.memory.list_recent_runs(limit=10)
         approvals = app.state.agent.list_pending_approvals()
         profile = app.state.profiles.get_capability_matrix()
         metrics_snapshot = app.state.metrics.snapshot()
+        diagnostics_snapshot = app.state.metrics.diagnostics_summary()
         last_failed = app.state.agent.resume_last_failed_run()
         queue_jobs = app.state.queue.list_jobs()[:10]
 
@@ -226,12 +263,23 @@ def create_app() -> FastAPI:
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
             "<h2>Metrics</h2>",
             "<ul>",
         ]
         for key, value in metrics_snapshot.items():
             body.append(f"<li>{key}: <b>{value}</b></li>")
+        body.append("</ul>")
+
+        body.append("<h2>Diagnostics summary</h2><ul>")
+        for section, payload in diagnostics_snapshot.items():
+            if isinstance(payload, dict):
+                body.append(f"<li><b>{section}</b><ul>")
+                for k, v in payload.items():
+                    body.append(f"<li>{k}: <b>{v}</b></li>")
+                body.append("</ul></li>")
+            else:
+                body.append(f"<li>{section}: <b>{payload}</b></li>")
         body.append("</ul>")
 
         body.append("<h2>Active profile matrix</h2>")
