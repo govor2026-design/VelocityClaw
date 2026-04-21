@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 import uuid
@@ -20,12 +21,16 @@ class QueueJob:
     result: Optional[dict] = None
     error: Optional[str] = None
     attempts: int = 0
+    worker_slot: Optional[str] = None
 
 
 class RunQueue:
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, max_concurrency: int = 1):
         self.jobs: Dict[str, QueueJob] = {}
         self.db_path = db_path
+        self.max_concurrency = max(1, max_concurrency)
+        self._semaphore = asyncio.Semaphore(self.max_concurrency)
+        self._active_jobs: set[str] = set()
         if self.db_path:
             self._ensure_tables()
             self._load_jobs_from_db()
@@ -44,7 +49,8 @@ class RunQueue:
                     updated_at TEXT NOT NULL,
                     result TEXT,
                     error TEXT,
-                    attempts INTEGER NOT NULL DEFAULT 0
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    worker_slot TEXT
                 )
                 """
             )
@@ -52,7 +58,7 @@ class RunQueue:
     def _load_jobs_from_db(self):
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                "SELECT job_id, task, context, status, created_at, updated_at, result, error, attempts FROM queue_jobs"
+                "SELECT job_id, task, context, status, created_at, updated_at, result, error, attempts, worker_slot FROM queue_jobs"
             ).fetchall()
         for row in rows:
             self.jobs[row[0]] = QueueJob(
@@ -65,6 +71,7 @@ class RunQueue:
                 result=json.loads(row[6]) if row[6] else None,
                 error=row[7],
                 attempts=row[8] or 0,
+                worker_slot=row[9],
             )
 
     def _persist_job(self, job: QueueJob):
@@ -73,8 +80,8 @@ class RunQueue:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
-                INSERT INTO queue_jobs (job_id, task, context, status, created_at, updated_at, result, error, attempts)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO queue_jobs (job_id, task, context, status, created_at, updated_at, result, error, attempts, worker_slot)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(job_id) DO UPDATE SET
                     task = excluded.task,
                     context = excluded.context,
@@ -83,7 +90,8 @@ class RunQueue:
                     updated_at = excluded.updated_at,
                     result = excluded.result,
                     error = excluded.error,
-                    attempts = excluded.attempts
+                    attempts = excluded.attempts,
+                    worker_slot = excluded.worker_slot
                 """,
                 (
                     job.job_id,
@@ -95,6 +103,7 @@ class RunQueue:
                     json.dumps(job.result, ensure_ascii=False) if job.result is not None else None,
                     job.error,
                     job.attempts,
+                    job.worker_slot,
                 ),
             )
 
@@ -110,6 +119,9 @@ class RunQueue:
     def list_jobs(self) -> list[dict]:
         return [asdict(job) for job in sorted(self.jobs.values(), key=lambda item: item.created_at, reverse=True)]
 
+    def active_count(self) -> int:
+        return len(self._active_jobs)
+
     def cancel(self, job_id: str) -> Optional[QueueJob]:
         job = self.jobs.get(job_id)
         if not job:
@@ -117,6 +129,21 @@ class RunQueue:
         if job.status in {"completed", "failed", "cancelled"}:
             return job
         job.status = "cancelled"
+        job.worker_slot = None
+        job.updated_at = datetime.now().isoformat()
+        self._persist_job(job)
+        return job
+
+    def requeue(self, job_id: str) -> Optional[QueueJob]:
+        job = self.jobs.get(job_id)
+        if not job:
+            return None
+        if job.status not in {"failed", "cancelled"}:
+            return job
+        job.status = "queued"
+        job.error = None
+        job.result = None
+        job.worker_slot = None
         job.updated_at = datetime.now().isoformat()
         self._persist_job(job)
         return job
@@ -125,18 +152,26 @@ class RunQueue:
         job = self.jobs[job_id]
         if job.status == "cancelled":
             return job
-        job.status = "running"
-        job.attempts += 1
-        job.updated_at = datetime.now().isoformat()
-        self._persist_job(job)
-        try:
-            result = await runner(job.task, job.context)
-            job.result = result
-            job.status = "completed"
-            job.error = None
-        except Exception as e:
-            job.error = str(e)
-            job.status = "failed"
-        job.updated_at = datetime.now().isoformat()
-        self._persist_job(job)
-        return job
+        async with self._semaphore:
+            if job.status == "cancelled":
+                return job
+            self._active_jobs.add(job.job_id)
+            job.status = "running"
+            job.attempts += 1
+            job.worker_slot = f"slot-{self.active_count()}"
+            job.updated_at = datetime.now().isoformat()
+            self._persist_job(job)
+            try:
+                result = await runner(job.task, job.context)
+                job.result = result
+                job.status = "completed"
+                job.error = None
+            except Exception as e:
+                job.error = str(e)
+                job.status = "failed"
+            finally:
+                job.worker_slot = None
+                job.updated_at = datetime.now().isoformat()
+                self._persist_job(job)
+                self._active_jobs.discard(job.job_id)
+            return job
