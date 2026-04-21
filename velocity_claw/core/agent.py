@@ -43,10 +43,12 @@ class VelocityClawAgent:
         run_id = self.memory.create_run(task)
         self.logger.info("Starting run %s for task: %s", run_id, task)
         self.memory.save_project_fact("last_task", task)
+        self.memory.save_project_note("task", task)
         try:
             self.logger.info("Run %s: Planning", run_id)
             plan = await self.planner.create_plan(task, context)
             self.memory.save_artifact(run_id, "run_plan", json.dumps(plan, ensure_ascii=False), artifact_type="plan")
+            self.memory.save_project_note("plan_summary", f"Planned {len(plan.get('steps', []))} steps for task: {task}")
             results = []
             for step in plan["steps"]:
                 step_id = step["id"]
@@ -116,6 +118,7 @@ class VelocityClawAgent:
             summary = self._build_summary(results)
             self.memory.update_run_status(run_id, status)
             self.memory.save_artifact(run_id, "run_summary", summary, artifact_type="summary")
+            self.memory.save_project_note("run_summary", f"Run {run_id} finished with status {status}: {summary}")
             report = {
                 "run_id": run_id,
                 "task": task,
@@ -129,6 +132,7 @@ class VelocityClawAgent:
         except Exception as e:
             self.logger.error("Run %s failed: %s", run_id, e)
             self.memory.update_run_status(run_id, "failed")
+            self.memory.save_project_note("run_error", f"Run {run_id} failed: {e}")
             raise
 
     def _pause_for_approval(self, run_id: str, task: str, step: dict, started_at: str, profile_name: str, results: list, boundary_type: str) -> dict:
@@ -151,6 +155,7 @@ class VelocityClawAgent:
         self.memory.save_artifact(run_id, f"approval_step_{step_id}", str(approval), step_id=step_id, artifact_type="approval")
         self.memory.save_artifact(run_id, f"approval_boundary_step_{step_id}", json.dumps({"step_id": step_id, "boundary_type": boundary_type}, ensure_ascii=False), step_id=step_id, artifact_type="approval_boundary")
         self.memory.save_approval_decision(run_id, step_id, "requested", actor=None, reason=approval.get("reason"), payload=approval)
+        self.memory.save_project_note("approval_pause", f"Run {run_id} paused for approval at step {step_id}")
         self.memory.update_run_status(run_id, "awaiting_approval")
         return {
             "run_id": run_id,
@@ -168,6 +173,7 @@ class VelocityClawAgent:
             self.memory.save_fix_attempt(run_id, attempt["attempt"], attempt)
             self.memory.save_artifact(run_id, f"auto_fix_attempt_{attempt['attempt']}", str(attempt), artifact_type="auto_fix")
         self.memory.update_run_status(run_id, "completed" if result["status"] == "completed" else "failed")
+        self.memory.save_project_note("auto_fix", f"Auto-fix run {run_id} ended with status {result['status']}")
         result["run_id"] = run_id
         return result
 
@@ -180,6 +186,9 @@ class VelocityClawAgent:
     def get_approval_history(self, run_id: str):
         return self.memory.load_approval_history(run_id)
 
+    def get_repo_context_summary(self) -> dict:
+        return self.memory.build_repo_context_summary()
+
     def approve_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
         payload = {
             "decision": "approved",
@@ -190,6 +199,7 @@ class VelocityClawAgent:
         self.memory.update_step_status(run_id, step_id, "approved", result=payload)
         self.memory.save_approval_decision(run_id, step_id, "approved", actor=actor, reason=reason, payload=payload)
         self.memory.save_artifact(run_id, f"approval_decision_step_{step_id}", str(payload), step_id=step_id, artifact_type="approval")
+        self.memory.save_project_note("approval_decision", f"Run {run_id} step {step_id} approved by {actor}")
         self.memory.update_run_status(run_id, "resuming_after_approval")
         resume = self.resume_after_approval(run_id, step_id)
         payload["resume"] = resume
@@ -205,6 +215,7 @@ class VelocityClawAgent:
         self.memory.update_step_status(run_id, step_id, "rejected", result=payload, error="Rejected by reviewer")
         self.memory.save_approval_decision(run_id, step_id, "rejected", actor=actor, reason=reason, payload=payload)
         self.memory.save_artifact(run_id, f"approval_decision_step_{step_id}", str(payload), step_id=step_id, artifact_type="approval")
+        self.memory.save_project_note("approval_decision", f"Run {run_id} step {step_id} rejected by {actor}")
         self.memory.update_run_status(run_id, "rejected")
         return payload
 
@@ -249,8 +260,10 @@ class VelocityClawAgent:
             executed.append(result)
             if result.get("status") == "failed":
                 self.memory.update_run_status(run_id, "failed")
+                self.memory.save_project_note("resume_failure", f"Run {run_id} failed again during continuation at step {step.get('id')}")
                 return {"status": "failed", "executed": executed}
         self.memory.update_run_status(run_id, "completed")
+        self.memory.save_project_note("resume_complete", f"Run {run_id} completed after approval continuation")
         return {"status": "completed", "executed": executed}
 
     def get_status(self) -> Dict:
