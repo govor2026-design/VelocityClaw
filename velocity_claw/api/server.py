@@ -92,6 +92,13 @@ def create_app() -> FastAPI:
         app.state.metrics.set_value("queue_failed", sum(1 for job in queue_jobs if job["status"] == "failed"))
         app.state.metrics.set_value("queue_cancelled", sum(1 for job in queue_jobs if job["status"] == "cancelled"))
 
+    def group_artifacts(run_data: dict) -> dict:
+        grouped: dict[str, list[dict]] = {}
+        for artifact in run_data.get("artifacts", []):
+            key = f"step_{artifact['step_id']}" if artifact.get("step_id") is not None else "run_level"
+            grouped.setdefault(key, []).append(artifact)
+        return grouped
+
     @app.get("/health")
     def health():
         refresh_runtime_metrics()
@@ -229,6 +236,46 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         return data
 
+    @app.get("/runs/{run_id}/artifacts")
+    def run_artifacts(run_id: str):
+        data = app.state.agent.memory.load_run(run_id)
+        if not data:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        return {"run_id": run_id, "grouped_artifacts": group_artifacts(data)}
+
+    @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
+    def run_detail_view(run_id: str):
+        data = app.state.agent.memory.load_run(run_id)
+        if not data:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        grouped = group_artifacts(data)
+        body = [
+            "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
+            f"<h1>Run detail: {run_id}</h1>",
+            f"<p>Task: <b>{data['task']}</b></p>",
+            f"<p>Status: <b>{data['status']}</b></p>",
+            f"<p>Created: {data['created_at']}</p>",
+            "<h2>Steps</h2>",
+            "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>",
+            "<tr><th>ID</th><th>Title</th><th>Tool</th><th>Status</th><th>Error</th></tr>",
+        ]
+        for step in data.get("steps", []):
+            body.append(f"<tr><td>{step['id']}</td><td>{step['title']}</td><td>{step.get('tool') or ''}</td><td>{step['status']}</td><td>{step.get('error') or ''}</td></tr>")
+        body.append("</table>")
+        body.append("<h2>Approval history</h2><ul>")
+        for item in data.get("approval_history", []):
+            body.append(f"<li>step {item['step_id']} — {item['decision']} — actor: {item.get('actor') or 'n/a'} — reason: {item.get('reason') or 'n/a'}</li>")
+        body.append("</ul>")
+        body.append("<h2>Artifacts</h2>")
+        for group_name, artifacts in grouped.items():
+            body.append(f"<h3>{group_name}</h3><ul>")
+            for artifact in artifacts:
+                preview = (artifact.get('content') or '')[:180].replace('<', '&lt;').replace('>', '&gt;')
+                body.append(f"<li>{artifact['name']} [{artifact['artifact_type']}]<pre>{preview}</pre></li>")
+            body.append("</ul>")
+        body.append("</body></html>")
+        return "".join(body)
+
     @app.get("/runs/{run_id}/approval-history")
     def approval_history(run_id: str):
         return {"run_id": run_id, "history": app.state.agent.get_approval_history(run_id)}
@@ -301,16 +348,16 @@ def create_app() -> FastAPI:
 
         body.append("<h2>Recent runs</h2>")
         body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th></tr>")
+        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th></tr>")
         for run in recent:
             body.append(
-                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td></tr>"
+                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td></tr>"
             )
         body.append("</table>")
 
         body.append("<h2>Last failed run</h2>")
         if last_failed:
-            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])}</p>")
+            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a></p>")
         else:
             body.append("<p>No failed runs recorded.</p>")
 
