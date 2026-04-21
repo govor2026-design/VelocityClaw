@@ -71,6 +71,14 @@ class MemoryStore:
                 )
             """)
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS project_notes (
+                    id INTEGER PRIMARY KEY,
+                    note_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS fix_attempts (
                     id INTEGER PRIMARY KEY,
                     run_id TEXT NOT NULL,
@@ -131,7 +139,7 @@ class MemoryStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE runs SET status = ?, completed_at = ? WHERE run_id = ?",
-                (status, datetime.now().isoformat() if status in ["completed", "failed"] else None, run_id)
+                (status, datetime.now().isoformat() if status in ["completed", "failed", "rejected"] else None, run_id)
             )
 
     def load_run(self, run_id: str) -> Optional[Dict]:
@@ -231,6 +239,42 @@ class MemoryStore:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute("SELECT value FROM project_facts WHERE key = ?", (key,)).fetchone()
             return json.loads(row[0]) if row else None
+
+    def list_project_facts(self) -> dict:
+        if not self.enabled:
+            return {}
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("SELECT key, value FROM project_facts ORDER BY key").fetchall()
+        return {key: json.loads(value) for key, value in rows}
+
+    def save_project_note(self, note_type: str, content: str) -> None:
+        if not self.enabled:
+            return
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO project_notes (note_type, content) VALUES (?, ?)",
+                (note_type, content),
+            )
+
+    def load_recent_project_notes(self, limit: int = 10) -> list[dict]:
+        if not self.enabled:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT note_type, content, created_at FROM project_notes ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {"note_type": row[0], "content": row[1], "created_at": row[2]}
+            for row in rows
+        ]
+
+    def build_repo_context_summary(self, limit: int = 5) -> dict:
+        return {
+            "project_facts": self.list_project_facts(),
+            "recent_notes": self.load_recent_project_notes(limit=limit),
+            "recent_runs": self.list_recent_runs(limit=limit),
+        }
 
     def save_fix_attempt(self, run_id: str, attempt_no: int, summary: Any) -> None:
         if not self.enabled:
