@@ -54,32 +54,7 @@ class VelocityClawAgent:
                 started_at = datetime.now().isoformat()
                 profile_name = self.settings.execution_profile
                 if self.approvals.requires_approval(step, profile_name):
-                    completed_at = datetime.now().isoformat()
-                    approval = self.approvals.build_record(step, f"Sensitive step for profile {profile_name}")
-                    step_result = {
-                        "id": step_id,
-                        "title": step["title"],
-                        "tool": step.get("tool"),
-                        "args": step.get("args", {}),
-                        "status": "pending_approval",
-                        "result": approval,
-                        "error": None,
-                        "started_at": started_at,
-                        "completed_at": completed_at,
-                    }
-                    results.append(step_result)
-                    self.memory.save_step(run_id, step_result)
-                    self.memory.save_artifact(run_id, f"approval_step_{step_id}", str(approval), step_id=step_id, artifact_type="approval")
-                    self.memory.save_approval_decision(run_id, step_id, "requested", actor=None, reason=approval.get("reason"), payload=approval)
-                    self.memory.update_run_status(run_id, "awaiting_approval")
-                    return {
-                        "run_id": run_id,
-                        "task": task,
-                        "status": "awaiting_approval",
-                        "summary": f"Run paused at step {step_id} awaiting approval.",
-                        "steps": results,
-                        "signature": "velocity claw",
-                    }
+                    return self._pause_for_approval(run_id, task, step, started_at, profile_name, results, boundary_type="initial_pause")
 
                 if not self.profile_manager.is_tool_allowed(step.get("tool", ""), profile_name):
                     completed_at = datetime.now().isoformat()
@@ -156,6 +131,36 @@ class VelocityClawAgent:
             self.memory.update_run_status(run_id, "failed")
             raise
 
+    def _pause_for_approval(self, run_id: str, task: str, step: dict, started_at: str, profile_name: str, results: list, boundary_type: str) -> dict:
+        step_id = step["id"]
+        completed_at = datetime.now().isoformat()
+        approval = self.approvals.build_record(step, f"Sensitive step for profile {profile_name}")
+        step_result = {
+            "id": step_id,
+            "title": step["title"],
+            "tool": step.get("tool"),
+            "args": step.get("args", {}),
+            "status": "pending_approval",
+            "result": approval,
+            "error": None,
+            "started_at": started_at,
+            "completed_at": completed_at,
+        }
+        results.append(step_result)
+        self.memory.save_step(run_id, step_result)
+        self.memory.save_artifact(run_id, f"approval_step_{step_id}", str(approval), step_id=step_id, artifact_type="approval")
+        self.memory.save_artifact(run_id, f"approval_boundary_step_{step_id}", json.dumps({"step_id": step_id, "boundary_type": boundary_type}, ensure_ascii=False), step_id=step_id, artifact_type="approval_boundary")
+        self.memory.save_approval_decision(run_id, step_id, "requested", actor=None, reason=approval.get("reason"), payload=approval)
+        self.memory.update_run_status(run_id, "awaiting_approval")
+        return {
+            "run_id": run_id,
+            "task": task,
+            "status": "awaiting_approval",
+            "summary": f"Run paused at step {step_id} awaiting approval.",
+            "steps": results,
+            "signature": "velocity claw",
+        }
+
     def run_auto_fix(self, *, target_test: str, patch_plan: list[dict], runner: str = "pytest", max_attempts: int = 2) -> dict:
         run_id = self.memory.create_run(f"auto_fix:{target_test}")
         result = self.auto_fix.run(target_test=target_test, patch_plan=patch_plan, runner=runner, max_attempts=max_attempts, dry_run=self.settings.dry_run)
@@ -185,6 +190,7 @@ class VelocityClawAgent:
         self.memory.update_step_status(run_id, step_id, "approved", result=payload)
         self.memory.save_approval_decision(run_id, step_id, "approved", actor=actor, reason=reason, payload=payload)
         self.memory.save_artifact(run_id, f"approval_decision_step_{step_id}", str(payload), step_id=step_id, artifact_type="approval")
+        self.memory.update_run_status(run_id, "resuming_after_approval")
         resume = self.resume_after_approval(run_id, step_id)
         payload["resume"] = resume
         return payload
@@ -216,11 +222,27 @@ class VelocityClawAgent:
         except Exception:
             self.memory.update_run_status(run_id, "approved_waiting_manual_resume")
             return {"status": "manual_resume_required", "reason": "run_plan_invalid"}
-        pending_steps = [s for s in plan.get("steps", []) if s.get("id", 0) >= step_id]
+
+        steps = plan.get("steps", [])
+        start_index = next((idx for idx, item in enumerate(steps) if item.get("id") == step_id), None)
+        if start_index is None:
+            self.memory.update_run_status(run_id, "approved_waiting_manual_resume")
+            return {"status": "manual_resume_required", "reason": "step_boundary_missing"}
+
         executed = []
-        for step in pending_steps:
+        profile_name = self.settings.execution_profile
+        for index, step in enumerate(steps[start_index:], start=start_index):
+            started_at = datetime.now().isoformat()
+            if index > start_index and self.approvals.requires_approval(step, profile_name):
+                pause = self._pause_for_approval(run_id, run["task"], step, started_at, profile_name, [], boundary_type="continuation_pause")
+                return {
+                    "status": "awaiting_approval",
+                    "boundary_step_id": step.get("id"),
+                    "executed": executed,
+                    "pause": pause,
+                }
             result = asyncio.run(self.executor.execute_step(step, {}))
-            result["started_at"] = result.get("started_at") or datetime.now().isoformat()
+            result["started_at"] = result.get("started_at") or started_at
             result["completed_at"] = datetime.now().isoformat()
             self.memory.save_step(run_id, result)
             self._persist_artifacts(run_id, result)
