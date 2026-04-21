@@ -79,7 +79,7 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.logger = get_logger("velocity_claw.api")
     app.state.agent = VelocityClawAgent(settings=settings)
-    app.state.queue = RunQueue(db_path=f"{settings.memory_db_path}.queue")
+    app.state.queue = RunQueue(db_path=f"{settings.memory_db_path}.queue", max_concurrency=2)
     app.state.metrics = MetricsRegistry()
     app.state.profiles = ExecutionProfileManager(settings)
 
@@ -172,7 +172,11 @@ def create_app() -> FastAPI:
     @app.get("/queue")
     def queue_list():
         refresh_runtime_metrics()
-        return {"jobs": app.state.queue.list_jobs()}
+        return {
+            "jobs": app.state.queue.list_jobs(),
+            "active_workers": app.state.queue.active_count(),
+            "max_concurrency": app.state.queue.max_concurrency,
+        }
 
     @app.get("/queue/{job_id}")
     def queue_status(job_id: str):
@@ -185,6 +189,14 @@ def create_app() -> FastAPI:
     @app.post("/queue/{job_id}/cancel")
     def queue_cancel(job_id: str):
         job = app.state.queue.cancel(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        refresh_runtime_metrics()
+        return job.__dict__
+
+    @app.post("/queue/{job_id}/requeue")
+    def queue_requeue(job_id: str):
+        job = app.state.queue.requeue(job_id)
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
         refresh_runtime_metrics()
@@ -219,6 +231,8 @@ def create_app() -> FastAPI:
             "diagnostics": app.state.metrics.diagnostics_summary(),
             "last_failed_run": app.state.agent.resume_last_failed_run(),
             "queue_jobs_preview": app.state.queue.list_jobs()[:10],
+            "active_workers": app.state.queue.active_count(),
+            "max_concurrency": app.state.queue.max_concurrency,
         }
 
     @app.post("/reset", response_model=ResetResponse)
@@ -310,6 +324,7 @@ def create_app() -> FastAPI:
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
+            f"<p>Queue concurrency: <b>{app.state.queue.max_concurrency}</b> | Active workers: <b>{app.state.queue.active_count()}</b></p>",
             "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
             "<h2>Metrics</h2>",
             "<ul>",
@@ -339,9 +354,9 @@ def create_app() -> FastAPI:
         body.append("<h2>Queue jobs</h2>")
         if queue_jobs:
             body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-            body.append("<tr><th>Job ID</th><th>Task</th><th>Status</th><th>Attempts</th></tr>")
+            body.append("<tr><th>Job ID</th><th>Task</th><th>Status</th><th>Attempts</th><th>Worker Slot</th></tr>")
             for job in queue_jobs:
-                body.append(f"<tr><td><code>{job['job_id']}</code></td><td>{job['task']}</td><td>{badge(job['status'])}</td><td>{job['attempts']}</td></tr>")
+                body.append(f"<tr><td><code>{job['job_id']}</code></td><td>{job['task']}</td><td>{badge(job['status'])}</td><td>{job['attempts']}</td><td>{job.get('worker_slot') or ''}</td></tr>")
             body.append("</table>")
         else:
             body.append("<p>No queue jobs recorded.</p>")
