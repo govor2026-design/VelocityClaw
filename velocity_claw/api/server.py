@@ -186,6 +186,10 @@ def create_app() -> FastAPI:
     def provider_health():
         return {"providers": app.state.agent.router.get_provider_health()}
 
+    @app.get("/git/summary")
+    def git_summary():
+        return app.state.agent.executor.git.inspect_repo()
+
     @app.get("/memory/context")
     def memory_context():
         return app.state.agent.get_repo_context_summary()
@@ -389,6 +393,7 @@ def create_app() -> FastAPI:
         last_failed = app.state.agent.resume_last_failed_run()
         queue_jobs = app.state.queue.list_jobs()[:10]
         provider_health = app.state.agent.router.get_provider_health()
+        git_state = app.state.agent.executor.git.inspect_repo()
 
         def badge(status: str) -> str:
             return f"<span style='padding:2px 8px;border-radius:999px;border:1px solid #999'>{status}</span>"
@@ -398,7 +403,10 @@ def create_app() -> FastAPI:
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
             f"<p>Queue concurrency: <b>{app.state.queue.max_concurrency}</b> | Active workers: <b>{app.state.queue.active_count()}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/providers/health'>/providers/health</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/git/summary'>/git/summary</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/providers/health'>/providers/health</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<h2>Git summary</h2>",
+            f"<p>Branch: <b>{git_state.get('branch') or ''}</b> | Clean: <b>{git_state.get('is_clean')}</b></p>",
+            f"<pre>{(git_state.get('diff_stat') or '(no diff)')[:1500]}</pre>",
             "<h2>Metrics</h2>",
             "<ul>",
         ]
