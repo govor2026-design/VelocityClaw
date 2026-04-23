@@ -1,4 +1,7 @@
 from typing import Dict, List
+import asyncio
+import time
+
 import aiohttp
 from velocity_claw.config.settings import Settings
 from velocity_claw.logs.logger import get_logger
@@ -20,18 +23,35 @@ class ModelRouter:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.logger = get_logger("velocity_claw.models")
-        self.timeout = aiohttp.ClientTimeout(total=60)
+        self.timeout = aiohttp.ClientTimeout(total=settings.provider_request_timeout_seconds)
+        self._session: aiohttp.ClientSession | None = None
+        self.provider_health: Dict[str, Dict] = {
+            provider: {
+                "failures": 0,
+                "successes": 0,
+                "last_error": None,
+                "last_failure_at": None,
+                "last_success_at": None,
+                "cooldown_until": 0.0,
+            }
+            for provider in settings.provider_order
+        }
 
     async def route(self, task_type: str, prompt: str) -> Dict:
         providers = self._provider_candidates(task_type)
         errors: List[str] = []
         for provider in providers:
+            if self._provider_in_cooldown(provider):
+                self.logger.info("Skipping provider %s because it is in cooldown", provider)
+                continue
             self.logger.info("Routing %s task to provider %s", task_type, provider)
             try:
                 response = await self._call_provider(provider, prompt, task_type)
+                self._record_provider_success(provider)
                 return self._normalize_response(provider, response)
             except (ProviderNotConfiguredError, ProviderRequestError, ProviderResponseError) as e:
                 self.logger.warning("Provider %s failed: %s", provider, e)
+                self._record_provider_failure(provider, str(e))
                 errors.append(f"{provider}: {e}")
                 continue
         raise ProviderRequestError("All providers failed: " + "; ".join(errors) if errors else "No providers available")
@@ -58,6 +78,41 @@ class ModelRouter:
             return True
         return bool(getattr(self.settings, f"{provider}_api_key", None))
 
+    def _provider_in_cooldown(self, provider: str) -> bool:
+        state = self.provider_health.get(provider) or {}
+        return bool(state.get("cooldown_until", 0.0) > time.time())
+
+    def _record_provider_success(self, provider: str) -> None:
+        state = self.provider_health.setdefault(provider, {})
+        state["successes"] = state.get("successes", 0) + 1
+        state["last_success_at"] = time.time()
+        state["last_error"] = None
+        state["cooldown_until"] = 0.0
+
+    def _record_provider_failure(self, provider: str, error: str) -> None:
+        state = self.provider_health.setdefault(provider, {})
+        state["failures"] = state.get("failures", 0) + 1
+        state["last_error"] = error
+        state["last_failure_at"] = time.time()
+        state["cooldown_until"] = time.time() + self.settings.provider_health_cooldown_seconds
+
+    def get_provider_health(self) -> Dict[str, Dict]:
+        snapshot = {}
+        for provider, state in self.provider_health.items():
+            snapshot[provider] = dict(state)
+            snapshot[provider]["in_cooldown"] = self._provider_in_cooldown(provider)
+        return snapshot
+
+    async def close(self) -> None:
+        if self._session and not self._session.closed:
+            await self._session.close()
+        self._session = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(timeout=self.timeout)
+        return self._session
+
     async def _call_provider(self, provider: str, prompt: str, task_type: str) -> Dict:
         if provider == "openai":
             return await self.call_openai(prompt, task_type)
@@ -72,15 +127,24 @@ class ModelRouter:
         raise ProviderNotConfiguredError(f"Unknown provider: {provider}")
 
     async def _post_json(self, url: str, *, headers=None, payload=None) -> Dict:
-        try:
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
+        last_error = None
+        for attempt in range(1, self.settings.provider_max_retries + 2):
+            try:
+                session = await self._get_session()
                 async with session.post(url, headers=headers, json=payload) as response:
                     response.raise_for_status()
                     return await response.json()
-        except aiohttp.ClientResponseError as e:
-            raise ProviderRequestError(f"HTTP {e.status}: {e.message}")
-        except aiohttp.ClientError as e:
-            raise ProviderRequestError(str(e))
+            except aiohttp.ClientResponseError as e:
+                last_error = ProviderRequestError(f"HTTP {e.status}: {e.message}")
+                if e.status < 500:
+                    raise last_error
+            except aiohttp.ClientError as e:
+                last_error = ProviderRequestError(str(e))
+
+            if attempt <= self.settings.provider_max_retries:
+                await asyncio.sleep((self.settings.provider_retry_backoff_ms / 1000.0) * attempt)
+
+        raise last_error or ProviderRequestError("unknown provider request failure")
 
     async def call_openai(self, prompt: str, task_type: str) -> Dict:
         if not self.settings.openai_api_key:
