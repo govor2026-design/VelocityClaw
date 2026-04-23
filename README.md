@@ -20,6 +20,7 @@ Velocity Claw — self-hosted AI dev-agent с модульной архитек�
 - `memory/store.py` — runs, steps, artifacts, preferences, project facts, fix attempts
 - `security/policy.py` — workspace/path/url/command validation
 - `security/access.py` — execution profiles + approval classification
+- `core/release.py` — release readiness evaluation
 
 ### Code / Dev-Agent слой
 - `tools/patch.py` — patch engine:
@@ -59,11 +60,12 @@ Velocity Claw — self-hosted AI dev-agent с модульной архитек�
 - dashboard foundation (`/dashboard`)
 - queue foundation (`/queue/submit`, `/queue/{job_id}`)
 - metrics foundation (`/metrics`)
+- release readiness endpoint (`/release/readiness`)
 
 ### Tools
 - `tools/fs.py` — filesystem operations
 - `tools/shell.py` — safe shell execution
-- `tools/git.py` — restricted git execution
+- `tools/git.py` — restricted git execution + safe repo inspection
 - `tools/http.py` — HTTP GET/POST with allowlist and limits
 - `tools/docker.py` — docker command wrapper foundation
 - `tools/editor.py` — helper text editor utilities
@@ -157,12 +159,37 @@ docker run --env-file .env -p 8000:8000 velocity-claw
 
 ---
 
+## Release readiness
+
+Теперь в проекте есть отдельный readiness layer:
+
+```bash
+curl http://127.0.0.1:8000/release/readiness
+```
+
+Он показывает:
+- есть ли ключевые packaging/runtime файлы
+- есть ли тесты
+- есть ли CLI/API entrypoints
+- есть ли blocking issues
+- есть ли warnings
+- какие packaging targets сейчас реально готовы:
+  - CLI
+  - API
+  - Docker
+  - Telegram
+
+Это удобно для быстрой проверки перед упаковкой, Docker build или публикацией очередного релиза.
+
+---
+
 ## Основные API endpoints
 
-### Health / metrics
+### Health / metrics / release
 ```bash
 curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/metrics
+curl http://127.0.0.1:8000/release/readiness
 ```
 
 ### Run task
@@ -218,7 +245,7 @@ pytest -q
 velocity_claw/
   api/            FastAPI server
   config/         settings / env loading
-  core/           agent, queue, modes, metrics, auto_fix
+  core/           agent, queue, modes, metrics, auto_fix, release
   executor/       tool dispatch
   logs/           logger
   memory/         SQLite run/step/artifact/project facts store
