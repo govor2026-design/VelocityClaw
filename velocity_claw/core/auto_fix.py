@@ -57,9 +57,9 @@ class AutoFixLoop:
             if failure_signature:
                 previous_failure_signatures.add(failure_signature)
 
-            attempt.status = "passed" if test_result["status"] in {"passed", "simulated"} else "failed"
+            attempt.status = "passed" if test_result["status"] == "passed" else ("simulated" if test_result["status"] == "simulated" else "failed")
             attempts.append(attempt.__dict__)
-            if test_result["status"] in {"passed", "simulated"}:
+            if test_result["status"] == "passed":
                 return {
                     "mode": "auto_fix",
                     "max_attempts": max_attempts,

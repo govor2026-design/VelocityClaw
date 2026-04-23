@@ -26,7 +26,7 @@ class ApprovalContinuationV3Tests(unittest.IsolatedAsyncioTestCase):
         agent.planner.create_plan = fake_plan
         initial = await agent.run_task("patch")
         self.assertEqual(initial["status"], "awaiting_approval")
-        approve = agent.approve_step(initial["run_id"], 1, actor="tester", reason="continue")
+        approve = await agent.approve_step(initial["run_id"], 1, actor="tester", reason="continue")
         self.assertEqual(approve["resume"]["status"], "awaiting_approval")
         self.assertEqual(approve["resume"]["boundary_step_id"], 2)
 
