@@ -19,6 +19,24 @@ class Plan(BaseModel):
     steps: List[PlanStep]
 
 
+INSPECTION_FIRST_TOOLS = [
+    "git.inspect",
+    "code.find_symbol",
+    "code.read_symbol",
+    "test.run",
+    "fs.read",
+    "analysis",
+]
+
+EDITING_TOOLS = [
+    "fs.write",
+    "fs.append",
+    "fs.replace",
+    "patch.apply",
+    "shell.run",
+    "git.run",
+]
+
 
 def extract_json_payload(raw: str):
     text = raw.strip()
@@ -74,10 +92,15 @@ class Planner:
             "Для каждого шага укажи:",
             "- id: уникальный номер",
             "- title: краткое описание",
-            "- tool: инструмент (fs.read, fs.write, git.run, shell.run, http.get, analysis, patch.apply, test.run)",
+            "- tool: инструмент (fs.read, fs.write, git.inspect, git.run, shell.run, http.get, analysis, patch.apply, test.run, code.find_symbol, code.read_symbol)",
             "- args: аргументы для инструмента",
             "- expected_output: ожидаемый результат",
             "Верни только валидный JSON без лишнего текста.",
+            "Сначала предпочитай inspection-first шаги, если задача связана с кодом, багом, тестами, архитектурой или репозиторием.",
+            f"Inspection-first tools: {', '.join(INSPECTION_FIRST_TOOLS)}",
+            f"Editing tools: {', '.join(EDITING_TOOLS)}",
+            "Не начинай план с patch.apply, fs.write, shell.run или git.run, если сначала можно понять ситуацию через inspection tools.",
+            "Перед редактированием предпочитай сначала хотя бы один из шагов: git.inspect, code.find_symbol, code.read_symbol, test.run, fs.read или analysis.",
             f"Задача: {task}",
         ]
         if context.get("project_root"):
