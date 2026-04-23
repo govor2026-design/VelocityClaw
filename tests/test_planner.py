@@ -21,10 +21,11 @@ class PlannerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.planner._parse_plan("invalid json")
 
-    def test_parse_wrapped_json_rejected(self):
+    def test_parse_wrapped_json_supported(self):
         wrapped = 'Here is your plan: {"task": "test", "steps": []}'
-        with self.assertRaises(ValueError):
-            self.planner._parse_plan(wrapped)
+        plan = self.planner._parse_plan(wrapped)
+        self.assertEqual(plan.task, "test")
+        self.assertEqual(plan.steps, [])
 
 
 if __name__ == "__main__":
