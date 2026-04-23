@@ -12,6 +12,8 @@ from velocity_claw.tools.fs import FileSystemTool
 
 class TestRunnerTool:
     __test__ = False
+    _ALLOWED_EXACT_ARGS = {"-q", "-x", "-vv", "--lf", "--ff", "--disable-warnings"}
+    _ALLOWED_PREFIX_ARGS = ("--maxfail=",)
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -106,7 +108,7 @@ class TestRunnerTool:
         marker: Optional[str] = None,
         nodeid: Optional[str] = None,
     ) -> list[str]:
-        safe_extra = [arg for arg in extra_args if arg and arg.startswith("-")]
+        safe_extra = [arg for arg in extra_args if self._is_allowed_extra_arg(arg)]
         if target:
             self.fs._validate_path(target)
         if nodeid:
@@ -128,6 +130,13 @@ class TestRunnerTool:
             cmd.extend(["-m", marker])
         cmd.extend(safe_extra)
         return cmd
+
+    def _is_allowed_extra_arg(self, arg: str) -> bool:
+        if not arg:
+            return False
+        if arg in self._ALLOWED_EXACT_ARGS:
+            return True
+        return any(arg.startswith(prefix) for prefix in self._ALLOWED_PREFIX_ARGS)
 
     def _empty_summary(self) -> dict:
         return {
@@ -170,30 +179,62 @@ class TestRunnerTool:
         return summary
 
     def parse_failures(self, output: str) -> list[dict]:
-        failures = []
-        current = None
-        for line in output.splitlines():
-            if line.startswith("FAILED "):
-                tail = line[len("FAILED "):]
-                parts = tail.split(" - ", 1)
-                node = parts[0].strip()
-                message = parts[1].strip() if len(parts) > 1 else tail
-                file_name = node.split("::", 1)[0] if "::" in node else None
-                current = {
-                    "failed_test_name": node,
-                    "nodeid": node,
-                    "file": file_name,
-                    "line": None,
-                    "assertion": message,
-                    "traceback_summary": message,
-                }
+        failures: list[dict] = []
+        current: dict | None = None
+        in_short_summary = False
+
+        for raw_line in output.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+
+            if stripped.startswith("short test summary info"):
+                in_short_summary = True
+                continue
+
+            if stripped.startswith("FAILED "):
+                current = self._parse_summary_line(stripped, kind="failed")
                 failures.append(current)
-            elif current and re.match(r".+\.py:\d+:\s+in\s+", line.strip()):
-                m = re.match(r"(.+\.py):(\d+):\s+in\s+", line.strip())
-                if m:
-                    current["file"] = m.group(1)
-                    current["line"] = int(m.group(2))
-            elif current and line.startswith("E       "):
-                current["assertion"] = line.replace("E       ", "", 1).strip()
-                current["traceback_summary"] = current["assertion"]
+                in_short_summary = True
+                continue
+
+            if stripped.startswith("ERROR "):
+                current = self._parse_summary_line(stripped, kind="error")
+                failures.append(current)
+                in_short_summary = True
+                continue
+
+            if in_short_summary and current and stripped.startswith("E   "):
+                message = stripped[4:].strip()
+                current["assertion"] = message
+                current["traceback_summary"] = message
+                continue
+
+            file_match = re.match(r"(.+\.py):(\d+):\s+in\s+", stripped)
+            if current and file_match:
+                current["file"] = file_match.group(1)
+                current["line"] = int(file_match.group(2))
+                continue
+
+            if current and stripped.startswith("E       "):
+                message = stripped.replace("E       ", "", 1).strip()
+                current["assertion"] = message
+                current["traceback_summary"] = message
+                continue
+
         return failures
+
+    def _parse_summary_line(self, line: str, *, kind: str) -> dict:
+        tail = line[len("FAILED "):] if kind == "failed" else line[len("ERROR "):]
+        parts = tail.split(" - ", 1)
+        node = parts[0].strip()
+        message = parts[1].strip() if len(parts) > 1 else tail
+        file_name = node.split("::", 1)[0] if ".py" in node else None
+        return {
+            "failed_test_name": node,
+            "nodeid": node,
+            "file": file_name,
+            "line": None,
+            "assertion": message,
+            "traceback_summary": message,
+            "kind": kind,
+        }
