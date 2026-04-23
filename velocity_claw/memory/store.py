@@ -149,7 +149,7 @@ class MemoryStore:
             run_row = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
             if not run_row:
                 return None
-            return {
+            run = {
                 "run_id": run_row[0],
                 "task": run_row[1],
                 "status": run_row[2],
@@ -160,6 +160,8 @@ class MemoryStore:
                 "fix_attempts": self.load_fix_attempts(run_id),
                 "approval_history": self.load_approval_history(run_id),
             }
+            run["forensics"] = self.build_run_forensics(run)
+            return run
 
     def load_steps(self, run_id: str):
         if not self.enabled:
@@ -310,6 +312,52 @@ class MemoryStore:
             } if last_failed else None,
             "recent_fix_attempts": self.list_recent_fix_attempts(limit=limit),
             "recent_notes": self.load_recent_project_notes(limit=limit),
+        }
+
+    def build_run_forensics(self, run: Dict) -> dict:
+        steps = run.get("steps", [])
+        artifacts = run.get("artifacts", [])
+        failed_step = next((step for step in steps if step.get("status") == "failed"), None)
+        pending_step = next((step for step in steps if step.get("status") == "pending_approval"), None)
+        last_step = steps[-1] if steps else None
+        artifact_counts: dict[str, int] = {}
+        previews: dict[str, list[dict]] = {"logs": [], "diffs": [], "failures": []}
+        for artifact in artifacts:
+            artifact_type = artifact.get("artifact_type") or "text"
+            artifact_counts[artifact_type] = artifact_counts.get(artifact_type, 0) + 1
+            preview = {
+                "name": artifact.get("name"),
+                "step_id": artifact.get("step_id"),
+                "preview": (artifact.get("content") or "")[:200],
+            }
+            if artifact_type == "log" and len(previews["logs"]) < 3:
+                previews["logs"].append(preview)
+            if artifact_type == "diff" and len(previews["diffs"]) < 3:
+                previews["diffs"].append(preview)
+            if artifact_type in {"failures", "auto_fix"} and len(previews["failures"]) < 3:
+                previews["failures"].append(preview)
+        return {
+            "step_count": len(steps),
+            "artifact_count": len(artifacts),
+            "artifact_counts_by_type": artifact_counts,
+            "failed_step": {
+                "id": failed_step.get("id"),
+                "title": failed_step.get("title"),
+                "tool": failed_step.get("tool"),
+                "error": failed_step.get("error"),
+            } if failed_step else None,
+            "pending_approval_step": {
+                "id": pending_step.get("id"),
+                "title": pending_step.get("title"),
+                "tool": pending_step.get("tool"),
+            } if pending_step else None,
+            "last_step": {
+                "id": last_step.get("id"),
+                "title": last_step.get("title"),
+                "tool": last_step.get("tool"),
+                "status": last_step.get("status"),
+            } if last_step else None,
+            "previews": previews,
         }
 
     def save_fix_attempt(self, run_id: str, attempt_no: int, summary: Any) -> None:
