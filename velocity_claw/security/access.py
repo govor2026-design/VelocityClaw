@@ -101,8 +101,8 @@ class ExecutionProfileManager:
             return profile.test_runner
         if tool == "shell.run":
             return profile.shell
-        if tool == "git.run":
-            return profile.git_write
+        if tool in {"git.run", "git.inspect"}:
+            return profile.git_write or tool == "git.inspect"
         if tool in {"http.get", "http.post"}:
             return profile.network
         return True
@@ -124,23 +124,67 @@ class ApprovalManager:
         self.profile_manager = ExecutionProfileManager(settings)
 
     def requires_approval(self, step: dict, profile_name: Optional[str] = None) -> bool:
+        decision = self.explain_requirement(step, profile_name)
+        return decision["required"]
+
+    def explain_requirement(self, step: dict, profile_name: Optional[str] = None) -> dict:
         profile = self.profile_manager.get_profile(profile_name)
         tool = step.get("tool")
-        if step.get("args", {}).get("require_approval") is True:
-            return True
-        if not profile.approval_workflow:
-            return False
-        if profile.name == "safe" and tool in {"patch.apply", "shell.run", "git.run", "fs.write", "fs.append", "fs.replace"}:
-            return True
-        if profile.name == "dev" and tool in {"git.run", "shell.run"}:
-            return True
-        return False
+        args = step.get("args", {})
+        triggers = []
+        risk_level = "low"
 
-    def build_record(self, step: dict, reason: str) -> dict:
+        if args.get("require_approval") is True:
+            triggers.append("explicit_require_approval")
+            risk_level = "high"
+
+        if profile.approval_workflow:
+            if profile.name == "safe" and tool in {"patch.apply", "shell.run", "git.run", "fs.write", "fs.append", "fs.replace"}:
+                triggers.append("safe_profile_sensitive_write_or_exec")
+                risk_level = "high"
+            elif profile.name == "dev" and tool in {"git.run", "shell.run"}:
+                triggers.append("dev_profile_exec_or_git_write")
+                risk_level = "medium"
+            elif profile.name == "owner" and tool in {"shell.run", "git.run"} and args.get("require_approval") is True:
+                triggers.append("owner_profile_explicit_approval")
+                risk_level = "medium"
+
+        path = args.get("path") or args.get("cwd")
+        command = args.get("command")
+        summary = {
+            "tool": tool,
+            "path": path,
+            "command": command,
+        }
+        required = bool(triggers)
         return {
-            "required": True,
-            "reason": reason,
+            "required": required,
+            "profile": profile.name,
+            "tool": tool,
+            "risk_level": risk_level if required else "low",
+            "triggers": triggers,
+            "summary": summary,
+            "reason": self._build_reason(profile.name, tool, triggers),
+        }
+
+    def build_record(self, step: dict, reason: str | None = None, profile_name: Optional[str] = None) -> dict:
+        explanation = self.explain_requirement(step, profile_name)
+        if reason:
+            explanation["reason"] = reason
+        return {
+            "required": explanation["required"],
+            "reason": explanation["reason"],
             "decision": None,
             "decided_by": None,
             "decided_at": None,
+            "profile": explanation["profile"],
+            "tool": explanation["tool"],
+            "risk_level": explanation["risk_level"],
+            "triggers": explanation["triggers"],
+            "summary": explanation["summary"],
         }
+
+    def _build_reason(self, profile_name: str, tool: Optional[str], triggers: list[str]) -> str:
+        if not triggers:
+            return "Approval not required."
+        return f"Approval required for tool {tool} under profile {profile_name}: {', '.join(triggers)}"
