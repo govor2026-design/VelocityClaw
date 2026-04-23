@@ -12,6 +12,7 @@ from velocity_claw.config.settings import load_settings
 from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.core.queue import RunQueue
 from velocity_claw.core.metrics import MetricsRegistry
+from velocity_claw.core.release import ReleaseReadinessEvaluator
 from velocity_claw.logs.logger import get_logger
 from velocity_claw.security.policy import SecurityViolationError
 from velocity_claw.security.access import ExecutionProfileManager
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.state.queue = RunQueue(db_path=f"{settings.memory_db_path}.queue", max_concurrency=2)
     app.state.metrics = MetricsRegistry()
     app.state.profiles = ExecutionProfileManager(settings)
+    app.state.release = ReleaseReadinessEvaluator(settings)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -126,6 +128,10 @@ def create_app() -> FastAPI:
     def health():
         refresh_runtime_metrics()
         return {"status": "ok", "metrics": app.state.metrics.snapshot()}
+
+    @app.get("/release/readiness")
+    def release_readiness():
+        return app.state.release.evaluate()
 
     @app.post("/task", response_model=TaskResponse)
     @limiter.limit("10/minute")
@@ -403,6 +409,7 @@ def create_app() -> FastAPI:
         queue_jobs = app.state.queue.list_jobs()[:10]
         provider_health = app.state.agent.router.get_provider_health()
         git_state = app.state.agent.executor.git.inspect_repo()
+        release_state = app.state.release.evaluate()
 
         def badge(status: str) -> str:
             return f"<span style='padding:2px 8px;border-radius:999px;border:1px solid #999'>{status}</span>"
@@ -412,7 +419,10 @@ def create_app() -> FastAPI:
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
             f"<p>Queue concurrency: <b>{app.state.queue.max_concurrency}</b> | Active workers: <b>{app.state.queue.active_count()}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/git/summary'>/git/summary</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/providers/health'>/providers/health</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/release/readiness'>/release/readiness</a> | <a href='/git/summary'>/git/summary</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/providers/health'>/providers/health</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<h2>Release readiness</h2>",
+            f"<p>Status: <b>{release_state.get('readiness')}</b> | Score: <b>{release_state.get('score')}/{release_state.get('total_checks')}</b></p>",
+            f"<p>Blocking issues: <b>{len(release_state.get('blocking_issues', []))}</b> | Warnings: <b>{len(release_state.get('warnings', []))}</b></p>",
             "<h2>Git summary</h2>",
             f"<p>Branch: <b>{git_state.get('branch') or ''}</b> | Clean: <b>{git_state.get('is_clean')}</b></p>",
             f"<pre>{(git_state.get('diff_stat') or '(no diff)')[:1500]}</pre>",
