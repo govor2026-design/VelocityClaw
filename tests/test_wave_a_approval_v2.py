@@ -47,7 +47,7 @@ class ApprovalWorkflowV2Tests(unittest.IsolatedAsyncioTestCase):
 
         agent.planner.create_plan = fake_plan
         result = await agent.run_task("patch")
-        approve = agent.approve_step(result["run_id"], 1, actor="tester", reason="approved")
+        approve = await agent.approve_step(result["run_id"], 1, actor="tester", reason="approved")
         self.assertIn("resume", approve)
         self.assertEqual(approve["resume"]["status"], "completed")
         self.assertIn("new", Path(workspace, "sample.py").read_text())
