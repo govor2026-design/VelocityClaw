@@ -275,6 +275,7 @@ class MemoryStore:
             "recent_notes": self.load_recent_project_notes(limit=limit),
             "recent_runs": self.list_recent_runs(limit=limit),
             "last_failed_run": self.get_last_failed_run(),
+            "recent_fix_attempts": self.list_recent_fix_attempts(limit=limit),
         }
 
     def build_planning_context(self, limit: int = 5) -> dict:
@@ -290,6 +291,25 @@ class MemoryStore:
                 "task": last_failed["task"],
                 "status": last_failed["status"],
             } if last_failed else None,
+            "recent_fix_attempts": self.list_recent_fix_attempts(limit=limit),
+        }
+
+    def build_resume_context(self, task: str, limit: int = 5) -> dict:
+        recent_runs = self.list_recent_runs(limit=20)
+        related_runs = [item for item in recent_runs if task.lower() in item["task"].lower()][:limit]
+        related_failed = [item for item in related_runs if item["status"] == "failed"]
+        last_failed = self.get_last_failed_run()
+        return {
+            "task": task,
+            "related_runs": related_runs,
+            "related_failed_runs": related_failed,
+            "last_failed_run": {
+                "run_id": last_failed["run_id"],
+                "task": last_failed["task"],
+                "status": last_failed["status"],
+            } if last_failed else None,
+            "recent_fix_attempts": self.list_recent_fix_attempts(limit=limit),
+            "recent_notes": self.load_recent_project_notes(limit=limit),
         }
 
     def save_fix_attempt(self, run_id: str, attempt_no: int, summary: Any) -> None:
@@ -312,6 +332,24 @@ class MemoryStore:
             ).fetchall()
         return [
             {"attempt_no": r[0], "summary": json.loads(r[1]) if r[1] else None, "created_at": r[2]}
+            for r in rows
+        ]
+
+    def list_recent_fix_attempts(self, limit: int = 10):
+        if not self.enabled:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT run_id, attempt_no, summary, created_at FROM fix_attempts ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "run_id": r[0],
+                "attempt_no": r[1],
+                "summary": json.loads(r[2]) if r[2] else None,
+                "created_at": r[3],
+            }
             for r in rows
         ]
 
