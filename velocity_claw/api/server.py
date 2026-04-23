@@ -306,6 +306,13 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         return data
 
+    @app.get("/runs/{run_id}/forensics")
+    def run_forensics(run_id: str):
+        data = app.state.agent.memory.load_run(run_id)
+        if not data:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        return {"run_id": run_id, "forensics": data.get("forensics", {})}
+
     @app.get("/runs/{run_id}/artifacts")
     def run_artifacts(run_id: str):
         data = app.state.agent.memory.load_run(run_id)
@@ -341,12 +348,16 @@ def create_app() -> FastAPI:
         grouped = group_artifacts(data)
         planning_context = load_artifact_json(data, "planning_context")
         resume_context = load_artifact_json(data, "resume_context")
+        forensics = data.get("forensics") or {}
         body = [
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             f"<h1>Run detail: {run_id}</h1>",
             f"<p>Task: <b>{data['task']}</b></p>",
             f"<p>Status: <b>{data['status']}</b></p>",
             f"<p>Created: {data['created_at']}</p>",
+            "<h2>Run forensics</h2>",
+            f"<p>Steps: <b>{forensics.get('step_count', 0)}</b> | Artifacts: <b>{forensics.get('artifact_count', 0)}</b></p>",
+            f"<pre>{json.dumps(forensics, ensure_ascii=False, indent=2)[:2500]}</pre>",
             "<h2>Steps</h2>",
             "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>",
             "<tr><th>ID</th><th>Title</th><th>Tool</th><th>Status</th><th>Error</th></tr>",
@@ -473,16 +484,18 @@ def create_app() -> FastAPI:
 
         body.append("<h2>Recent runs</h2>")
         body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th><th>Planning context</th><th>Resume context</th></tr>")
+        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th><th>Planning context</th><th>Resume context</th><th>Forensics</th></tr>")
         for run in recent:
             body.append(
-                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td><td><a href='/runs/{run['run_id']}/planning-context'>json</a></td><td><a href='/runs/{run['run_id']}/resume-context'>json</a></td></tr>"
+                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td><td><a href='/runs/{run['run_id']}/planning-context'>json</a></td><td><a href='/runs/{run['run_id']}/resume-context'>json</a></td><td><a href='/runs/{run['run_id']}/forensics'>json</a></td></tr>"
             )
         body.append("</table>")
 
         body.append("<h2>Last failed run</h2>")
         if last_failed:
-            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a> — <a href='/runs/{last_failed['run_id']}/planning-context'>planning context</a> — <a href='/runs/{last_failed['run_id']}/resume-context'>resume context</a></p>")
+            forensic = last_failed.get('forensics') or {}
+            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a> — <a href='/runs/{last_failed['run_id']}/forensics'>forensics</a></p>")
+            body.append(f"<p>Failed step: <b>{(forensic.get('failed_step') or {}).get('title') or 'n/a'}</b> | Artifacts: <b>{forensic.get('artifact_count', 0)}</b></p>")
         else:
             body.append("<p>No failed runs recorded.</p>")
 
