@@ -77,6 +77,11 @@ class ApprovalDecisionRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class ApprovalExplainRequest(BaseModel):
+    step: Dict[str, Any]
+    profile_name: Optional[str] = None
+
+
 limiter = Limiter(key_func=get_remote_address)
 
 
@@ -197,6 +202,10 @@ def create_app() -> FastAPI:
     @app.get("/memory/resume")
     def memory_resume(task: str):
         return app.state.agent.get_resume_context(task)
+
+    @app.post("/approvals/explain")
+    def explain_approval(payload: ApprovalExplainRequest):
+        return app.state.agent.explain_approval_requirement(payload.step, payload.profile_name)
 
     @app.post("/queue/submit")
     @limiter.limit("10/minute")
@@ -470,11 +479,14 @@ def create_app() -> FastAPI:
         body.append("<h2>Pending approvals</h2>")
         if approvals:
             body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-            body.append("<tr><th>Run ID</th><th>Step</th><th>Tool</th><th>Reason</th></tr>")
+            body.append("<tr><th>Run ID</th><th>Step</th><th>Tool</th><th>Risk</th><th>Triggers</th><th>Reason</th></tr>")
             for item in approvals:
-                reason = (item.get("result") or {}).get("reason") if isinstance(item.get("result"), dict) else None
+                approval_data = item.get("result") if isinstance(item.get("result"), dict) else {}
+                triggers = ", ".join(approval_data.get("triggers", [])) if approval_data else ""
+                reason = approval_data.get("reason") if approval_data else None
+                risk_level = approval_data.get("risk_level") if approval_data else None
                 body.append(
-                    f"<tr><td><code>{item['run_id']}</code></td><td>{item['title']}</td><td>{item['tool']}</td><td>{reason or 'n/a'}</td></tr>"
+                    f"<tr><td><code>{item['run_id']}</code></td><td>{item['title']}</td><td>{item['tool']}</td><td>{risk_level or 'n/a'}</td><td>{triggers or 'n/a'}</td><td>{reason or 'n/a'}</td></tr>"
                 )
             body.append("</table>")
         else:

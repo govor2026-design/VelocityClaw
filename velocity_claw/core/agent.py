@@ -147,7 +147,7 @@ class VelocityClawAgent:
     def _pause_for_approval(self, run_id: str, task: str, step: dict, started_at: str, profile_name: str, results: list, boundary_type: str) -> dict:
         step_id = step["id"]
         completed_at = datetime.now().isoformat()
-        approval = self.approvals.build_record(step, f"Sensitive step for profile {profile_name}")
+        approval = self.approvals.build_record(step, profile_name=profile_name)
         step_result = {
             "id": step_id,
             "title": step["title"],
@@ -161,7 +161,7 @@ class VelocityClawAgent:
         }
         results.append(step_result)
         self.memory.save_step(run_id, step_result)
-        self.memory.save_artifact(run_id, f"approval_step_{step_id}", str(approval), step_id=step_id, artifact_type="approval")
+        self.memory.save_artifact(run_id, f"approval_step_{step_id}", json.dumps(approval, ensure_ascii=False), step_id=step_id, artifact_type="approval")
         self.memory.save_artifact(run_id, f"approval_boundary_step_{step_id}", json.dumps({"step_id": step_id, "boundary_type": boundary_type}, ensure_ascii=False), step_id=step_id, artifact_type="approval_boundary")
         self.memory.save_approval_decision(run_id, step_id, "requested", actor=None, reason=approval.get("reason"), payload=approval)
         self.memory.save_project_note("approval_pause", f"Run {run_id} paused for approval at step {step_id}")
@@ -200,6 +200,9 @@ class VelocityClawAgent:
 
     def get_resume_context(self, task: str) -> dict:
         return self.memory.build_resume_context(task)
+
+    def explain_approval_requirement(self, step: dict, profile_name: Optional[str] = None) -> dict:
+        return self.approvals.explain_requirement(step, profile_name)
 
     async def approve_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
         payload = {
