@@ -52,9 +52,11 @@ class VelocityClawAgent:
         try:
             self.logger.info("Run %s: Planning", run_id)
             planning_context = self._build_planning_context(context)
+            resume_context = self.memory.build_resume_context(task)
             plan = await self.planner.create_plan(task, planning_context)
             self.memory.save_artifact(run_id, "run_plan", json.dumps(plan, ensure_ascii=False), artifact_type="plan")
             self.memory.save_artifact(run_id, "planning_context", json.dumps(planning_context, ensure_ascii=False), artifact_type="planning_context")
+            self.memory.save_artifact(run_id, "resume_context", json.dumps(resume_context, ensure_ascii=False), artifact_type="resume_context")
             self.memory.save_project_note("plan_summary", f"Planned {len(plan.get('steps', []))} steps for task: {task}")
             results = []
             for step in plan["steps"]:
@@ -195,6 +197,9 @@ class VelocityClawAgent:
 
     def get_repo_context_summary(self) -> dict:
         return self.memory.build_repo_context_summary()
+
+    def get_resume_context(self, task: str) -> dict:
+        return self.memory.build_resume_context(task)
 
     async def approve_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
         payload = {
