@@ -51,6 +51,10 @@ class Settings:
     git_enabled: bool = True
     dry_run: bool = False
     execution_profile: str = "safe"
+    provider_request_timeout_seconds: int = 60
+    provider_max_retries: int = 2
+    provider_retry_backoff_ms: int = 250
+    provider_health_cooldown_seconds: int = 30
 
     def __post_init__(self):
         self.env = os.getenv("ENV", self.env)
@@ -81,6 +85,10 @@ class Settings:
         self.git_enabled = parse_bool(os.getenv("GIT_ENABLED"), self.git_enabled)
         self.dry_run = parse_bool(os.getenv("DRY_RUN"), self.dry_run)
         self.execution_profile = os.getenv("EXECUTION_PROFILE", self.execution_profile)
+        self.provider_request_timeout_seconds = int(os.getenv("PROVIDER_REQUEST_TIMEOUT_SECONDS", self.provider_request_timeout_seconds))
+        self.provider_max_retries = int(os.getenv("PROVIDER_MAX_RETRIES", self.provider_max_retries))
+        self.provider_retry_backoff_ms = int(os.getenv("PROVIDER_RETRY_BACKOFF_MS", self.provider_retry_backoff_ms))
+        self.provider_health_cooldown_seconds = int(os.getenv("PROVIDER_HEALTH_COOLDOWN_SECONDS", self.provider_health_cooldown_seconds))
 
     @property
     def provider_order(self) -> List[str]:
