@@ -274,6 +274,22 @@ class MemoryStore:
             "project_facts": self.list_project_facts(),
             "recent_notes": self.load_recent_project_notes(limit=limit),
             "recent_runs": self.list_recent_runs(limit=limit),
+            "last_failed_run": self.get_last_failed_run(),
+        }
+
+    def build_planning_context(self, limit: int = 5) -> dict:
+        recent_notes = self.load_recent_project_notes(limit=limit)
+        recent_runs = self.list_recent_runs(limit=limit)
+        last_failed = self.get_last_failed_run()
+        return {
+            "project_facts": self.list_project_facts(),
+            "recent_notes": recent_notes,
+            "recent_run_tasks": [item["task"] for item in recent_runs],
+            "recent_failed_tasks": [item["task"] for item in recent_runs if item["status"] == "failed"],
+            "last_failed_run": {
+                "task": last_failed["task"],
+                "status": last_failed["status"],
+            } if last_failed else None,
         }
 
     def save_fix_attempt(self, run_id: str, attempt_no: int, summary: Any) -> None:

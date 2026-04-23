@@ -74,7 +74,7 @@ class Planner:
             "Для каждого шага укажи:",
             "- id: уникальный номер",
             "- title: краткое описание",
-            "- tool: инструмент (fs.read, fs.write, git.run, shell.run, http.get, analysis)",
+            "- tool: инструмент (fs.read, fs.write, git.run, shell.run, http.get, analysis, patch.apply, test.run)",
             "- args: аргументы для инструмента",
             "- expected_output: ожидаемый результат",
             "Верни только валидный JSON без лишнего текста.",
@@ -82,6 +82,25 @@ class Planner:
         ]
         if context.get("project_root"):
             instructions.append(f"Проект: {context['project_root']}")
+        planning_context = context.get("planning_context") or {}
+        if planning_context:
+            instructions.append("Учитывай известный контекст проекта и недавнюю историю запусков.")
+            project_facts = planning_context.get("project_facts") or {}
+            if project_facts:
+                instructions.append(f"Project facts: {json.dumps(project_facts, ensure_ascii=False)}")
+            recent_tasks = planning_context.get("recent_run_tasks") or []
+            if recent_tasks:
+                instructions.append(f"Recent run tasks: {json.dumps(recent_tasks, ensure_ascii=False)}")
+            recent_failed = planning_context.get("recent_failed_tasks") or []
+            if recent_failed:
+                instructions.append(f"Recent failed tasks: {json.dumps(recent_failed, ensure_ascii=False)}")
+            recent_notes = planning_context.get("recent_notes") or []
+            if recent_notes:
+                compact_notes = [f"{item.get('note_type')}: {item.get('content')}" for item in recent_notes[:5]]
+                instructions.append(f"Recent project notes: {json.dumps(compact_notes, ensure_ascii=False)}")
+            last_failed = planning_context.get("last_failed_run")
+            if last_failed:
+                instructions.append(f"Last failed run: {json.dumps(last_failed, ensure_ascii=False)}")
         return "\n".join(instructions)
 
     def _parse_plan(self, response: str) -> Plan:
