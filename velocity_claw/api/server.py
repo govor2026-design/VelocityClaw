@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 import asyncio
+import json
 import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -107,6 +108,15 @@ def create_app() -> FastAPI:
             grouped.setdefault(key, []).append(artifact)
         return grouped
 
+    def load_planning_context(run_data: dict) -> Optional[dict]:
+        for artifact in run_data.get("artifacts", []):
+            if artifact.get("name") == "planning_context":
+                try:
+                    return json.loads(artifact.get("content") or "{}")
+                except json.JSONDecodeError:
+                    return {"raw": artifact.get("content")}
+        return None
+
     @app.get("/health")
     def health():
         refresh_runtime_metrics()
@@ -171,6 +181,10 @@ def create_app() -> FastAPI:
     def explain_profile_tool(tool_name: str):
         tool = tool_name.replace("__", ".")
         return app.state.profiles.explain_tool_access(tool)
+
+    @app.get("/providers/health")
+    def provider_health():
+        return {"providers": app.state.agent.router.get_provider_health()}
 
     @app.get("/memory/context")
     def memory_context():
@@ -251,6 +265,7 @@ def create_app() -> FastAPI:
             "queue_jobs_preview": app.state.queue.list_jobs()[:10],
             "active_workers": app.state.queue.active_count(),
             "max_concurrency": app.state.queue.max_concurrency,
+            "provider_health": app.state.agent.router.get_provider_health(),
         }
 
     @app.post("/reset", response_model=ResetResponse)
@@ -275,12 +290,23 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         return {"run_id": run_id, "grouped_artifacts": group_artifacts(data)}
 
+    @app.get("/runs/{run_id}/planning-context")
+    def run_planning_context(run_id: str):
+        data = app.state.agent.memory.load_run(run_id)
+        if not data:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        planning_context = load_planning_context(data)
+        if planning_context is None:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Planning context not found"})
+        return {"run_id": run_id, "planning_context": planning_context}
+
     @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
     def run_detail_view(run_id: str):
         data = app.state.agent.memory.load_run(run_id)
         if not data:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         grouped = group_artifacts(data)
+        planning_context = load_planning_context(data)
         body = [
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             f"<h1>Run detail: {run_id}</h1>",
@@ -294,6 +320,11 @@ def create_app() -> FastAPI:
         for step in data.get("steps", []):
             body.append(f"<tr><td>{step['id']}</td><td>{step['title']}</td><td>{step.get('tool') or ''}</td><td>{step['status']}</td><td>{step.get('error') or ''}</td></tr>")
         body.append("</table>")
+        body.append("<h2>Planning context</h2>")
+        if planning_context:
+            body.append(f"<pre>{json.dumps(planning_context, ensure_ascii=False, indent=2)[:2000]}</pre>")
+        else:
+            body.append("<p>No planning context artifact recorded for this run.</p>")
         body.append("<h2>Approval history</h2><ul>")
         for item in data.get("approval_history", []):
             body.append(f"<li>step {item['step_id']} — {item['decision']} — actor: {item.get('actor') or 'n/a'} — reason: {item.get('reason') or 'n/a'}</li>")
@@ -337,6 +368,7 @@ def create_app() -> FastAPI:
         repo_context = app.state.agent.get_repo_context_summary()
         last_failed = app.state.agent.resume_last_failed_run()
         queue_jobs = app.state.queue.list_jobs()[:10]
+        provider_health = app.state.agent.router.get_provider_health()
 
         def badge(status: str) -> str:
             return f"<span style='padding:2px 8px;border-radius:999px;border:1px solid #999'>{status}</span>"
@@ -346,7 +378,7 @@ def create_app() -> FastAPI:
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
             f"<p>Queue concurrency: <b>{app.state.queue.max_concurrency}</b> | Active workers: <b>{app.state.queue.active_count()}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/memory/context'>/memory/context</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/memory/context'>/memory/context</a> | <a href='/providers/health'>/providers/health</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
             "<h2>Metrics</h2>",
             "<ul>",
         ]
@@ -364,6 +396,13 @@ def create_app() -> FastAPI:
             else:
                 body.append(f"<li>{section}: <b>{payload}</b></li>")
         body.append("</ul>")
+
+        body.append("<h2>Provider health</h2>")
+        body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+        body.append("<tr><th>Provider</th><th>Successes</th><th>Failures</th><th>Cooldown</th><th>Last error</th></tr>")
+        for provider, state in provider_health.items():
+            body.append(f"<tr><td>{provider}</td><td>{state.get('successes', 0)}</td><td>{state.get('failures', 0)}</td><td>{badge('yes' if state.get('in_cooldown') else 'no')}</td><td>{state.get('last_error') or ''}</td></tr>")
+        body.append("</table>")
 
         body.append("<h2>Repo context summary</h2>")
         body.append(f"<p>Project facts: <b>{len(repo_context.get('project_facts', {}))}</b> | Recent notes: <b>{len(repo_context.get('recent_notes', []))}</b></p>")
@@ -387,16 +426,16 @@ def create_app() -> FastAPI:
 
         body.append("<h2>Recent runs</h2>")
         body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th></tr>")
+        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th><th>Planning context</th></tr>")
         for run in recent:
             body.append(
-                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td></tr>"
+                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td><td><a href='/runs/{run['run_id']}/planning-context'>json</a></td></tr>"
             )
         body.append("</table>")
 
         body.append("<h2>Last failed run</h2>")
         if last_failed:
-            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a></p>")
+            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a> — <a href='/runs/{last_failed['run_id']}/planning-context'>planning context</a></p>")
         else:
             body.append("<p>No failed runs recorded.</p>")
 
