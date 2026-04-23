@@ -35,6 +35,12 @@ class VelocityClawAgent:
             return "workspace_write"
         return "read_only"
 
+    def _build_planning_context(self, context: Optional[Dict]) -> Dict:
+        merged = dict(context or {})
+        merged.setdefault("project_root", self.settings.workspace_root)
+        merged["planning_context"] = self.memory.build_planning_context()
+        return merged
+
     async def run_mode(self, mode: str, task: str, context: Optional[Dict] = None) -> Dict:
         return await self.run_task(build_mode_task(mode, task), context)
 
@@ -45,8 +51,10 @@ class VelocityClawAgent:
         self.memory.save_project_note("task", task)
         try:
             self.logger.info("Run %s: Planning", run_id)
-            plan = await self.planner.create_plan(task, context)
+            planning_context = self._build_planning_context(context)
+            plan = await self.planner.create_plan(task, planning_context)
             self.memory.save_artifact(run_id, "run_plan", json.dumps(plan, ensure_ascii=False), artifact_type="plan")
+            self.memory.save_artifact(run_id, "planning_context", json.dumps(planning_context, ensure_ascii=False), artifact_type="planning_context")
             self.memory.save_project_note("plan_summary", f"Planned {len(plan.get('steps', []))} steps for task: {task}")
             results = []
             for step in plan["steps"]:
