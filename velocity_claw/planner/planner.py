@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Dict, List
 from pydantic import BaseModel, ValidationError
 from velocity_claw.models.router import ModelRouter
@@ -16,6 +17,40 @@ class PlanStep(BaseModel):
 class Plan(BaseModel):
     task: str
     steps: List[PlanStep]
+
+
+
+def extract_json_payload(raw: str):
+    text = raw.strip()
+
+    fence_match = re.search(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", text, re.DOTALL)
+    if fence_match:
+        text = fence_match.group(1).strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    obj_start = text.find("{")
+    obj_end = text.rfind("}")
+    if obj_start != -1 and obj_end != -1 and obj_end > obj_start:
+        candidate = text[obj_start:obj_end + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    arr_start = text.find("[")
+    arr_end = text.rfind("]")
+    if arr_start != -1 and arr_end != -1 and arr_end > arr_start:
+        candidate = text[arr_start:arr_end + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError("planner_invalid_json_payload")
 
 
 class Planner:
@@ -50,12 +85,8 @@ class Planner:
         return "\n".join(instructions)
 
     def _parse_plan(self, response: str) -> Plan:
-        raw = response.strip()
-        if not raw.startswith("{") or not raw.endswith("}"):
-            self.logger.error("Planner returned non-JSON response")
-            raise ValueError("Invalid plan format: expected pure JSON object")
         try:
-            data = json.loads(raw)
+            data = extract_json_payload(response)
             return Plan(**data)
         except (json.JSONDecodeError, ValidationError, ValueError) as e:
             self.logger.error("Failed to parse plan: %s", e)
