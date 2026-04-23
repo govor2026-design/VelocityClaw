@@ -13,7 +13,7 @@ class SymbolNavigationV2Tests(unittest.TestCase):
         self.settings = Settings(workspace_root=self.workspace)
         self.nav = CodeNavigationTool(self.settings)
         Path(self.workspace, "a.py").write_text(textwrap.dedent(
-            """
+            '''
             class Demo:
                 """demo class"""
                 pass
@@ -22,13 +22,13 @@ class SymbolNavigationV2Tests(unittest.TestCase):
                 """hello doc"""
                 value = 1
                 return value
-            """
+            '''
         ))
         Path(self.workspace, "b.py").write_text(textwrap.dedent(
-            """
+            '''
             def hello():
                 return 2
-            """
+            '''
         ))
 
     def test_find_symbol_has_metadata(self):
