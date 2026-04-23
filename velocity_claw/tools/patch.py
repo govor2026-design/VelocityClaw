@@ -53,13 +53,30 @@ class PatchEngine:
             raise PatchError("Patch must include op and path")
 
         resolved = self.fs._validate_path(path)
-        original = self.fs.read(path) if resolved.exists() else ""
-        updated = self._execute_patch(op, original, patch)
+        details = {"resolved_path": str(resolved)}
+        try:
+            original = self.fs.read(path) if resolved.exists() else ""
+        except ValueError as e:
+            message = str(e)
+            if "Binary file detected" in message:
+                raise PatchError("binary file")
+            if "File too large" in message or "Content too large" in message:
+                raise PatchError("file too large")
+            raise PatchError(message)
+
+        updated, patch_details = self._execute_patch(op, original, patch)
+        details.update(patch_details)
         changed = updated != original
         diff = self._make_diff(str(Path(path)), original, updated)
 
         if not preview_only and changed:
-            self.fs.write(path, updated)
+            try:
+                self.fs.write(path, updated)
+            except ValueError as e:
+                message = str(e)
+                if "Content too large" in message or "File too large" in message:
+                    raise PatchError("file too large")
+                raise PatchError(message)
 
         return PatchResult(
             op=op,
@@ -67,23 +84,26 @@ class PatchEngine:
             changed=changed,
             diff=diff,
             preview_only=preview_only,
-            details={"resolved_path": str(resolved)},
+            details=details,
         )
 
-    def _execute_patch(self, op: str, content: str, patch: dict) -> str:
+    def _execute_patch(self, op: str, content: str, patch: dict) -> tuple[str, dict]:
         if op == "insert":
             anchor = patch.get("anchor")
             new_text = patch.get("content", "")
             if anchor is None:
                 raise PatchError("insert requires anchor")
-            if anchor not in content:
+            count = content.count(anchor)
+            if count == 0:
                 raise PatchError("anchor not found")
+            if count > 1:
+                raise PatchError("ambiguous anchor match")
             position = patch.get("position", "after")
             idx = content.find(anchor)
             if position == "before":
-                return content[:idx] + new_text + content[idx:]
+                return content[:idx] + new_text + content[idx:], {"anchor_matches": count, "position": position}
             idx += len(anchor)
-            return content[:idx] + new_text + content[idx:]
+            return content[:idx] + new_text + content[idx:], {"anchor_matches": count, "position": position}
         if op == "replace_block":
             target = patch.get("target")
             replacement = patch.get("replacement")
@@ -96,14 +116,16 @@ class PatchEngine:
                 raise PatchError("target block not found")
             if count > 1:
                 raise PatchError("ambiguous target block match")
-            return content.replace(target, replacement, 1)
+            return content.replace(target, replacement, 1), {"target_matches": count}
         if op == "append":
             new_text = patch.get("content", "")
-            return content + new_text
+            return content + new_text, {"appended_bytes": len(new_text.encode("utf-8"))}
         if op == "replace_function":
-            return self._replace_symbol_block(content, patch.get("name"), "function", patch.get("replacement"))
+            updated = self._replace_symbol_block(content, patch.get("name"), "function", patch.get("replacement"))
+            return updated, {"symbol_kind": "function", "symbol_name": patch.get("name")}
         if op == "replace_class":
-            return self._replace_symbol_block(content, patch.get("name"), "class", patch.get("replacement"))
+            updated = self._replace_symbol_block(content, patch.get("name"), "class", patch.get("replacement"))
+            return updated, {"symbol_kind": "class", "symbol_name": patch.get("name")}
         raise PatchError(f"Unsupported patch op: {op}")
 
     def _replace_symbol_block(self, content: str, name: Optional[str], kind: str, replacement: Optional[str]) -> str:
