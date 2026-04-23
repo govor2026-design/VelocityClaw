@@ -1,9 +1,12 @@
 from typing import Any, Dict, List, Optional
 import asyncio
 import time
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from velocity_claw.config.settings import load_settings
 from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.core.queue import RunQueue
@@ -73,6 +76,9 @@ class ApprovalDecisionRequest(BaseModel):
     reason: Optional[str] = None
 
 
+limiter = Limiter(key_func=get_remote_address)
+
+
 def create_app() -> FastAPI:
     settings = load_settings()
     app = FastAPI(title="Velocity Claw API")
@@ -82,6 +88,8 @@ def create_app() -> FastAPI:
     app.state.queue = RunQueue(db_path=f"{settings.memory_db_path}.queue", max_concurrency=2)
     app.state.metrics = MetricsRegistry()
     app.state.profiles = ExecutionProfileManager(settings)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     def refresh_runtime_metrics() -> None:
         approvals_pending = len(app.state.agent.list_pending_approvals())
@@ -105,13 +113,14 @@ def create_app() -> FastAPI:
         return {"status": "ok", "metrics": app.state.metrics.snapshot()}
 
     @app.post("/task", response_model=TaskResponse)
-    async def task(request: TaskRequest):
-        if not request.task or not request.task.strip():
+    @limiter.limit("10/minute")
+    async def task(request: Request, payload: TaskRequest):
+        if not payload.task or not payload.task.strip():
             raise HTTPException(status_code=400, detail={"status": "failed", "error": "invalid_task", "detail": "Task must not be empty"})
         app.state.metrics.incr("tasks_total")
         started = time.monotonic()
         try:
-            result = await app.state.agent.run_task(request.task, request.context)
+            result = await app.state.agent.run_task(payload.task, payload.context)
             app.state.metrics.incr("tasks_completed")
             return TaskResponse(**result)
         except SecurityViolationError as e:
@@ -131,11 +140,12 @@ def create_app() -> FastAPI:
             refresh_runtime_metrics()
 
     @app.post("/modes/run")
-    async def run_mode(request: ModeRequest):
+    @limiter.limit("10/minute")
+    async def run_mode(request: Request, payload: ModeRequest):
         app.state.metrics.incr("tasks_total")
         started = time.monotonic()
         try:
-            result = await app.state.agent.run_mode(request.mode, request.task, request.context)
+            result = await app.state.agent.run_mode(payload.mode, payload.task, payload.context)
             if result["status"] == "completed":
                 app.state.metrics.incr("tasks_completed")
             else:
@@ -167,8 +177,9 @@ def create_app() -> FastAPI:
         return app.state.agent.get_repo_context_summary()
 
     @app.post("/queue/submit")
-    async def queue_submit(request: TaskRequest):
-        job = app.state.queue.enqueue(request.task, request.context)
+    @limiter.limit("10/minute")
+    async def queue_submit(request: Request, payload: TaskRequest):
+        job = app.state.queue.enqueue(payload.task, payload.context)
         refresh_runtime_metrics()
         asyncio.create_task(app.state.queue.run_job(job.job_id, app.state.agent.run_task))
         return {"job_id": job.job_id, "status": job.status}
@@ -191,7 +202,8 @@ def create_app() -> FastAPI:
         return job.__dict__
 
     @app.post("/queue/{job_id}/cancel")
-    def queue_cancel(job_id: str):
+    @limiter.limit("20/minute")
+    def queue_cancel(request: Request, job_id: str):
         job = app.state.queue.cancel(job_id)
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
@@ -199,7 +211,8 @@ def create_app() -> FastAPI:
         return job.__dict__
 
     @app.post("/queue/{job_id}/requeue")
-    def queue_requeue(job_id: str):
+    @limiter.limit("20/minute")
+    def queue_requeue(request: Request, job_id: str):
         job = app.state.queue.requeue(job_id)
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
@@ -207,14 +220,15 @@ def create_app() -> FastAPI:
         return job.__dict__
 
     @app.post("/auto-fix")
-    def auto_fix(request: AutoFixRequest):
+    @limiter.limit("5/minute")
+    def auto_fix(request: Request, payload: AutoFixRequest):
         app.state.metrics.incr("auto_fix_total")
         refresh_runtime_metrics()
         return app.state.agent.run_auto_fix(
-            target_test=request.target_test,
-            patch_plan=request.patch_plan,
-            runner=request.runner,
-            max_attempts=request.max_attempts,
+            target_test=payload.target_test,
+            patch_plan=payload.patch_plan,
+            runner=payload.runner,
+            max_attempts=payload.max_attempts,
         )
 
     @app.get("/status", response_model=StatusResponse)
@@ -303,12 +317,14 @@ def create_app() -> FastAPI:
         return {"pending": app.state.agent.list_pending_approvals()}
 
     @app.post("/approvals/{run_id}/{step_id}/approve")
-    def approve(run_id: str, step_id: int, request: ApprovalDecisionRequest):
-        return app.state.agent.approve_step(run_id, step_id, actor=request.actor, reason=request.reason)
+    @limiter.limit("20/minute")
+    async def approve(request: Request, run_id: str, step_id: int, payload: ApprovalDecisionRequest):
+        return await app.state.agent.approve_step(run_id, step_id, actor=payload.actor, reason=payload.reason)
 
     @app.post("/approvals/{run_id}/{step_id}/reject")
-    def reject(run_id: str, step_id: int, request: ApprovalDecisionRequest):
-        return app.state.agent.reject_step(run_id, step_id, actor=request.actor, reason=request.reason)
+    @limiter.limit("20/minute")
+    def reject(request: Request, run_id: str, step_id: int, payload: ApprovalDecisionRequest):
+        return app.state.agent.reject_step(run_id, step_id, actor=payload.actor, reason=payload.reason)
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard():

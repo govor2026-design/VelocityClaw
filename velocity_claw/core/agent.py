@@ -1,4 +1,3 @@
-import asyncio
 import json
 from datetime import datetime
 from typing import Dict, Optional
@@ -189,7 +188,7 @@ class VelocityClawAgent:
     def get_repo_context_summary(self) -> dict:
         return self.memory.build_repo_context_summary()
 
-    def approve_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
+    async def approve_step(self, run_id: str, step_id: int, actor: str = "owner", reason: str | None = None) -> dict:
         payload = {
             "decision": "approved",
             "actor": actor,
@@ -201,7 +200,7 @@ class VelocityClawAgent:
         self.memory.save_artifact(run_id, f"approval_decision_step_{step_id}", str(payload), step_id=step_id, artifact_type="approval")
         self.memory.save_project_note("approval_decision", f"Run {run_id} step {step_id} approved by {actor}")
         self.memory.update_run_status(run_id, "resuming_after_approval")
-        resume = self.resume_after_approval(run_id, step_id)
+        resume = await self.resume_after_approval(run_id, step_id)
         payload["resume"] = resume
         return payload
 
@@ -219,7 +218,7 @@ class VelocityClawAgent:
         self.memory.update_run_status(run_id, "rejected")
         return payload
 
-    def resume_after_approval(self, run_id: str, step_id: int) -> dict:
+    async def resume_after_approval(self, run_id: str, step_id: int) -> dict:
         run = self.memory.load_run(run_id)
         if not run:
             return {"status": "failed", "error": "run_not_found"}
@@ -252,7 +251,7 @@ class VelocityClawAgent:
                     "executed": executed,
                     "pause": pause,
                 }
-            result = asyncio.run(self.executor.execute_step(step, {}))
+            result = await self.executor.execute_step(step, {})
             result["started_at"] = result.get("started_at") or started_at
             result["completed_at"] = datetime.now().isoformat()
             self.memory.save_step(run_id, result)
