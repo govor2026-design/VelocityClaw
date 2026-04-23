@@ -108,9 +108,9 @@ def create_app() -> FastAPI:
             grouped.setdefault(key, []).append(artifact)
         return grouped
 
-    def load_planning_context(run_data: dict) -> Optional[dict]:
+    def load_artifact_json(run_data: dict, artifact_name: str) -> Optional[dict]:
         for artifact in run_data.get("artifacts", []):
-            if artifact.get("name") == "planning_context":
+            if artifact.get("name") == artifact_name:
                 try:
                     return json.loads(artifact.get("content") or "{}")
                 except json.JSONDecodeError:
@@ -189,6 +189,10 @@ def create_app() -> FastAPI:
     @app.get("/memory/context")
     def memory_context():
         return app.state.agent.get_repo_context_summary()
+
+    @app.get("/memory/resume")
+    def memory_resume(task: str):
+        return app.state.agent.get_resume_context(task)
 
     @app.post("/queue/submit")
     @limiter.limit("10/minute")
@@ -295,10 +299,20 @@ def create_app() -> FastAPI:
         data = app.state.agent.memory.load_run(run_id)
         if not data:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
-        planning_context = load_planning_context(data)
+        planning_context = load_artifact_json(data, "planning_context")
         if planning_context is None:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Planning context not found"})
         return {"run_id": run_id, "planning_context": planning_context}
+
+    @app.get("/runs/{run_id}/resume-context")
+    def run_resume_context(run_id: str):
+        data = app.state.agent.memory.load_run(run_id)
+        if not data:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        resume_context = load_artifact_json(data, "resume_context")
+        if resume_context is None:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Resume context not found"})
+        return {"run_id": run_id, "resume_context": resume_context}
 
     @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
     def run_detail_view(run_id: str):
@@ -306,7 +320,8 @@ def create_app() -> FastAPI:
         if not data:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         grouped = group_artifacts(data)
-        planning_context = load_planning_context(data)
+        planning_context = load_artifact_json(data, "planning_context")
+        resume_context = load_artifact_json(data, "resume_context")
         body = [
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             f"<h1>Run detail: {run_id}</h1>",
@@ -325,6 +340,11 @@ def create_app() -> FastAPI:
             body.append(f"<pre>{json.dumps(planning_context, ensure_ascii=False, indent=2)[:2000]}</pre>")
         else:
             body.append("<p>No planning context artifact recorded for this run.</p>")
+        body.append("<h2>Resume context</h2>")
+        if resume_context:
+            body.append(f"<pre>{json.dumps(resume_context, ensure_ascii=False, indent=2)[:2000]}</pre>")
+        else:
+            body.append("<p>No resume context artifact recorded for this run.</p>")
         body.append("<h2>Approval history</h2><ul>")
         for item in data.get("approval_history", []):
             body.append(f"<li>step {item['step_id']} — {item['decision']} — actor: {item.get('actor') or 'n/a'} — reason: {item.get('reason') or 'n/a'}</li>")
@@ -378,7 +398,7 @@ def create_app() -> FastAPI:
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
             f"<p>Queue concurrency: <b>{app.state.queue.max_concurrency}</b> | Active workers: <b>{app.state.queue.active_count()}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/memory/context'>/memory/context</a> | <a href='/providers/health'>/providers/health</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/providers/health'>/providers/health</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
             "<h2>Metrics</h2>",
             "<ul>",
         ]
@@ -405,7 +425,7 @@ def create_app() -> FastAPI:
         body.append("</table>")
 
         body.append("<h2>Repo context summary</h2>")
-        body.append(f"<p>Project facts: <b>{len(repo_context.get('project_facts', {}))}</b> | Recent notes: <b>{len(repo_context.get('recent_notes', []))}</b></p>")
+        body.append(f"<p>Project facts: <b>{len(repo_context.get('project_facts', {}))}</b> | Recent notes: <b>{len(repo_context.get('recent_notes', []))}</b> | Recent fix attempts: <b>{len(repo_context.get('recent_fix_attempts', []))}</b></p>")
 
         body.append("<h2>Active profile matrix</h2>")
         body.append(f"<p>{profile['description']}</p>")
@@ -426,16 +446,16 @@ def create_app() -> FastAPI:
 
         body.append("<h2>Recent runs</h2>")
         body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th><th>Planning context</th></tr>")
+        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th><th>Planning context</th><th>Resume context</th></tr>")
         for run in recent:
             body.append(
-                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td><td><a href='/runs/{run['run_id']}/planning-context'>json</a></td></tr>"
+                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td><td><a href='/runs/{run['run_id']}/planning-context'>json</a></td><td><a href='/runs/{run['run_id']}/resume-context'>json</a></td></tr>"
             )
         body.append("</table>")
 
         body.append("<h2>Last failed run</h2>")
         if last_failed:
-            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a> — <a href='/runs/{last_failed['run_id']}/planning-context'>planning context</a></p>")
+            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a> — <a href='/runs/{last_failed['run_id']}/planning-context'>planning context</a> — <a href='/runs/{last_failed['run_id']}/resume-context'>resume context</a></p>")
         else:
             body.append("<p>No failed runs recorded.</p>")
 
