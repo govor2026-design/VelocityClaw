@@ -29,7 +29,7 @@ class Executor:
     def _get_profile(self, tool: str) -> AccessProfile:
         if tool in ["http.get", "http.post"]:
             return self.security.get_profile("network_allowlist")
-        if tool == "git.run":
+        if tool in ["git.run", "git.inspect"]:
             return self.security.get_profile("git_safe")
         if tool in ["fs.write", "fs.append", "fs.replace", "shell.run", "patch.apply", "test.run"]:
             return self.security.get_profile("workspace_write")
@@ -110,6 +110,8 @@ class Executor:
             if dry_run:
                 return {"status": "simulated", "command": args["command"]}
             return self.shell.run_command(args["command"], args.get("cwd"), timeout=self.settings.command_timeout)
+        if tool == "git.inspect":
+            return self.git.inspect_repo(args.get("cwd"), timeout=args.get("timeout", self.settings.command_timeout))
         if tool == "git.run":
             self.security.validate_git_command(args["command"], profile)
             if dry_run:

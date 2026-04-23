@@ -9,7 +9,7 @@ class GitTool:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.repo_root = Path(settings.workspace_root).resolve()
-        self.safe_commands = {"status", "diff", "add", "commit", "branch", "checkout", "log"}
+        self.safe_commands = {"status", "diff", "add", "commit", "branch", "checkout", "log", "rev-parse"}
         self.destructive_commands = {
             "reset --hard", "clean -fd", "push --force", "rebase", "rm",
             "filter-branch", "gc --prune=now"
@@ -61,4 +61,19 @@ class GitTool:
             "code": completed.returncode,
             "stdout": completed.stdout.strip(),
             "stderr": completed.stderr.strip(),
+        }
+
+    def inspect_repo(self, cwd: str = None, timeout: int = 30) -> Dict:
+        cwd_path = self.validate_repo_root(cwd)
+        branch = self.run_git_command("git rev-parse --abbrev-ref HEAD", str(cwd_path), timeout=timeout)
+        status = self.run_git_command("git status --short", str(cwd_path), timeout=timeout)
+        recent = self.run_git_command("git log --oneline -5", str(cwd_path), timeout=timeout)
+        diff = self.run_git_command("git diff --stat", str(cwd_path), timeout=timeout)
+        return {
+            "branch": branch.get("stdout", ""),
+            "is_clean": not bool(status.get("stdout")),
+            "status_short": status.get("stdout", ""),
+            "recent_commits": [line for line in recent.get("stdout", "").splitlines() if line.strip()],
+            "diff_stat": diff.get("stdout", ""),
+            "repo_root": str(cwd_path),
         }
