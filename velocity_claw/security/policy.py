@@ -66,15 +66,41 @@ class SecurityManager:
         if not profile.workspace_write:
             raise SecurityViolationError("Shell execution not allowed in current profile")
 
+        lower_cmd = command.lower().strip()
         dangerous_patterns = {
             "rm", "rmdir", "del", "format", "fdisk", "mkfs", "dd", "sudo",
             "su", "chmod", "chown", "passwd", "useradd", "usermod",
             "systemctl", "service", "kill", "pkill", "reboot", "shutdown"
         }
-        tokens = command.lower().split()
+        dangerous_substrings = [
+            "rm -rf",
+            "rm -fr",
+            "mkfs.",
+            "curl ",
+            "wget ",
+            "| sh",
+            "| bash",
+            "> /etc/",
+            ">/etc/",
+            "chmod 777",
+            "chown root",
+        ]
+        shell_chaining = ["&&", ";", "||"]
+
+        tokens = lower_cmd.replace("\n", " ").split()
         for token in tokens:
             if token in dangerous_patterns:
-                raise SecurityViolationError(f"Dangerous command pattern: {token}")
+                raise SecurityViolationError(f"Dangerous command token blocked: {token}")
+
+        for pattern in dangerous_substrings:
+            if pattern in lower_cmd:
+                raise SecurityViolationError(f"Dangerous command pattern blocked: {pattern}")
+
+        if any(op in lower_cmd for op in shell_chaining):
+            chained_tokens = [token for token in dangerous_patterns if token in lower_cmd]
+            if chained_tokens:
+                raise SecurityViolationError(f"Dangerous chained shell command blocked: {', '.join(sorted(set(chained_tokens)))}")
+
         return command
 
     def validate_git_command(self, command: str, profile: AccessProfile) -> str:
