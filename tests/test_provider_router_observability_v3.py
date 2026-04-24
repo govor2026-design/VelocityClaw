@@ -50,7 +50,9 @@ class ProviderRouterObservabilityV3Tests(unittest.TestCase):
             }):
                 response = client.get("/providers/observability")
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json()["summary"]["route_count"], 1)
+                payload = response.json()
+                self.assertEqual(payload["status"], "ok")
+                self.assertEqual(payload["observability"]["summary"]["route_count"], 1)
 
                 dashboard = client.get("/dashboard")
                 self.assertEqual(dashboard.status_code, 200)
