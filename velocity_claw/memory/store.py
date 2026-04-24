@@ -161,6 +161,7 @@ class MemoryStore:
                 "approval_history": self.load_approval_history(run_id),
             }
             run["forensics"] = self.build_run_forensics(run)
+            run["report"] = self.build_run_report(run)
             return run
 
     def load_steps(self, run_id: str):
@@ -358,6 +359,55 @@ class MemoryStore:
                 "status": last_step.get("status"),
             } if last_step else None,
             "previews": previews,
+        }
+
+    def build_run_report(self, run: Dict) -> dict:
+        steps = run.get("steps", [])
+        artifacts = run.get("artifacts", [])
+        approvals = run.get("approval_history", [])
+        fix_attempts = run.get("fix_attempts", [])
+        forensics = run.get("forensics") or self.build_run_forensics(run)
+        successful_steps = [step for step in steps if step.get("status") in {"success", "approved"}]
+        failed_step = forensics.get("failed_step")
+        executive_summary = f"Run {run.get('run_id')} for '{run.get('task')}' finished with status {run.get('status')}."
+        if failed_step:
+            executive_summary += f" Failed at step '{failed_step.get('title')}' via {failed_step.get('tool')}."
+        elif forensics.get("pending_approval_step"):
+            executive_summary += " Awaiting approval continuation."
+        report_steps = [
+            {
+                "id": step.get("id"),
+                "title": step.get("title"),
+                "tool": step.get("tool"),
+                "status": step.get("status"),
+            }
+            for step in steps[:10]
+        ]
+        return {
+            "executive_summary": executive_summary,
+            "status": run.get("status"),
+            "task": run.get("task"),
+            "step_overview": {
+                "total": len(steps),
+                "successful": len(successful_steps),
+                "failed": 1 if failed_step else 0,
+                "pending_approval": 1 if forensics.get("pending_approval_step") else 0,
+            },
+            "artifact_overview": {
+                "total": len(artifacts),
+                "counts_by_type": forensics.get("artifact_counts_by_type", {}),
+            },
+            "approval_overview": {
+                "total_events": len(approvals),
+            },
+            "fix_attempt_overview": {
+                "total_attempts": len(fix_attempts),
+            },
+            "key_steps": report_steps,
+            "forensic_highlights": {
+                "failed_step": failed_step,
+                "last_step": forensics.get("last_step"),
+            },
         }
 
     def save_fix_attempt(self, run_id: str, attempt_no: int, summary: Any) -> None:
