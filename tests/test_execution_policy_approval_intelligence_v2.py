@@ -23,6 +23,10 @@ class ExecutionPolicyApprovalIntelligenceV2Tests(unittest.TestCase):
         self.assertEqual(explanation["tool"], "patch.apply")
         self.assertEqual(explanation["risk_level"], "high")
         self.assertTrue(explanation["triggers"])
+        self.assertEqual(explanation["recommended_action"], "review_then_approve_or_reject")
+        self.assertIn("High-risk approval", explanation["operator_hint"])
+        self.assertIn("sample.py", explanation["next_step_hint"])
+        self.assertEqual(explanation["approval_label"], "high:patch.apply")
 
     def test_approvals_explain_route(self):
         workspace = tempfile.mkdtemp()
@@ -46,6 +50,10 @@ class ExecutionPolicyApprovalIntelligenceV2Tests(unittest.TestCase):
             self.assertEqual(explanation["tool"], "shell.run")
             self.assertEqual(explanation["profile"], "dev")
             self.assertIn("triggers", explanation)
+            self.assertIn("recommended_action", explanation)
+            self.assertIn("operator_hint", explanation)
+            self.assertIn("next_step_hint", explanation)
+            self.assertIn("approval_label", explanation)
 
     def test_dashboard_shows_richer_pending_approval_columns(self):
         workspace = tempfile.mkdtemp()
@@ -71,6 +79,10 @@ class ExecutionPolicyApprovalIntelligenceV2Tests(unittest.TestCase):
                         "risk_level": "high",
                         "triggers": ["safe_profile_sensitive_write_or_exec"],
                         "summary": {"tool": "patch.apply", "path": "sample.py", "command": None},
+                        "recommended_action": "review_then_approve_or_reject",
+                        "operator_hint": "High-risk approval for patch.apply. Review path/command details before approving.",
+                        "next_step_hint": "If approved, patch will be applied to sample.py.",
+                        "approval_label": "high:patch.apply",
                     },
                     "error": None,
                     "started_at": "2026-04-23T00:00:00",
