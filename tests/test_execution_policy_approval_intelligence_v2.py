@@ -40,10 +40,12 @@ class ExecutionPolicyApprovalIntelligenceV2Tests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200)
             payload = response.json()
-            self.assertTrue(payload["required"])
-            self.assertEqual(payload["tool"], "shell.run")
-            self.assertEqual(payload["profile"], "dev")
-            self.assertIn("triggers", payload)
+            self.assertEqual(payload["status"], "ok")
+            explanation = payload["explanation"]
+            self.assertTrue(explanation["required"])
+            self.assertEqual(explanation["tool"], "shell.run")
+            self.assertEqual(explanation["profile"], "dev")
+            self.assertIn("triggers", explanation)
 
     def test_dashboard_shows_richer_pending_approval_columns(self):
         workspace = tempfile.mkdtemp()
