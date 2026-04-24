@@ -180,9 +180,13 @@ class VelocityClawAgent:
         result = self.auto_fix.run(target_test=target_test, patch_plan=patch_plan, runner=runner, max_attempts=max_attempts, dry_run=self.settings.dry_run)
         for attempt in result["attempts"]:
             self.memory.save_fix_attempt(run_id, attempt["attempt"], attempt)
-            self.memory.save_artifact(run_id, f"auto_fix_attempt_{attempt['attempt']}", str(attempt), artifact_type="auto_fix")
+            self.memory.save_artifact(run_id, f"auto_fix_attempt_{attempt['attempt']}", json.dumps(attempt, ensure_ascii=False), artifact_type="auto_fix")
+            if attempt.get("forensic_summary"):
+                self.memory.save_artifact(run_id, f"auto_fix_attempt_{attempt['attempt']}_forensics", json.dumps(attempt["forensic_summary"], ensure_ascii=False), artifact_type="auto_fix_forensics")
+        if result.get("forensics"):
+            self.memory.save_artifact(run_id, "auto_fix_loop_forensics", json.dumps(result["forensics"], ensure_ascii=False), artifact_type="auto_fix_forensics")
         self.memory.update_run_status(run_id, "completed" if result["status"] == "completed" else "failed")
-        self.memory.save_project_note("auto_fix", f"Auto-fix run {run_id} ended with status {result['status']}")
+        self.memory.save_project_note("auto_fix", f"Auto-fix run {run_id} ended with status {result['status']} ({result.get('stop_reason')})")
         result["run_id"] = run_id
         return result
 
