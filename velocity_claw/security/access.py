@@ -157,6 +157,10 @@ class ApprovalManager:
             "command": command,
         }
         required = bool(triggers)
+        next_step_hint = self._build_next_step_hint(tool, summary)
+        operator_hint = self._build_operator_hint(required, risk_level, tool)
+        recommended_action = self._build_recommended_action(required, risk_level)
+        approval_label = self._build_approval_label(required, risk_level, tool)
         return {
             "required": required,
             "profile": profile.name,
@@ -165,6 +169,10 @@ class ApprovalManager:
             "triggers": triggers,
             "summary": summary,
             "reason": self._build_reason(profile.name, tool, triggers),
+            "recommended_action": recommended_action,
+            "operator_hint": operator_hint,
+            "next_step_hint": next_step_hint,
+            "approval_label": approval_label,
         }
 
     def build_record(self, step: dict, reason: str | None = None, profile_name: Optional[str] = None) -> dict:
@@ -182,9 +190,49 @@ class ApprovalManager:
             "risk_level": explanation["risk_level"],
             "triggers": explanation["triggers"],
             "summary": explanation["summary"],
+            "recommended_action": explanation["recommended_action"],
+            "operator_hint": explanation["operator_hint"],
+            "next_step_hint": explanation["next_step_hint"],
+            "approval_label": explanation["approval_label"],
         }
 
     def _build_reason(self, profile_name: str, tool: Optional[str], triggers: list[str]) -> str:
         if not triggers:
             return "Approval not required."
         return f"Approval required for tool {tool} under profile {profile_name}: {', '.join(triggers)}"
+
+    def _build_recommended_action(self, required: bool, risk_level: str) -> str:
+        if not required:
+            return "continue"
+        if risk_level == "high":
+            return "review_then_approve_or_reject"
+        if risk_level == "medium":
+            return "quick_review"
+        return "continue"
+
+    def _build_operator_hint(self, required: bool, risk_level: str, tool: Optional[str]) -> str:
+        if not required:
+            return "No operator action required."
+        if risk_level == "high":
+            return f"High-risk approval for {tool}. Review path/command details before approving."
+        if risk_level == "medium":
+            return f"Review {tool} briefly before continuing."
+        return f"Approval gate present for {tool}."
+
+    def _build_next_step_hint(self, tool: Optional[str], summary: dict) -> str:
+        path = summary.get("path")
+        command = summary.get("command")
+        if tool == "patch.apply" and path:
+            return f"If approved, patch will be applied to {path}."
+        if tool == "shell.run" and command:
+            return f"If approved, shell command will run: {command}."
+        if tool == "git.run" and command:
+            return f"If approved, git command will run: {command}."
+        if path:
+            return f"If approved, execution continues against {path}."
+        return "If approved, the paused run will continue to the gated step."
+
+    def _build_approval_label(self, required: bool, risk_level: str, tool: Optional[str]) -> str:
+        if not required:
+            return "not_required"
+        return f"{risk_level}:{tool or 'unknown'}"
