@@ -101,6 +101,7 @@ class Planner:
             f"Editing tools: {', '.join(EDITING_TOOLS)}",
             "Не начинай план с patch.apply, fs.write, shell.run или git.run, если сначала можно понять ситуацию через inspection tools.",
             "Перед редактированием предпочитай сначала хотя бы один из шагов: git.inspect, code.find_symbol, code.read_symbol, test.run, fs.read или analysis.",
+            "Если memory signals показывают repeated failures, pending approvals или свежий failure pattern, учитывай это прямо в порядке шагов.",
             f"Задача: {task}",
         ]
         if context.get("project_root"):
@@ -117,6 +118,9 @@ class Planner:
             recent_failed = planning_context.get("recent_failed_tasks") or []
             if recent_failed:
                 instructions.append(f"Recent failed tasks: {json.dumps(recent_failed, ensure_ascii=False)}")
+            repeated_failed = planning_context.get("repeated_failed_tasks") or []
+            if repeated_failed:
+                instructions.append(f"Repeated failed tasks: {json.dumps(repeated_failed, ensure_ascii=False)}")
             recent_notes = planning_context.get("recent_notes") or []
             if recent_notes:
                 compact_notes = [f"{item.get('note_type')}: {item.get('content')}" for item in recent_notes[:5]]
@@ -124,6 +128,15 @@ class Planner:
             last_failed = planning_context.get("last_failed_run")
             if last_failed:
                 instructions.append(f"Last failed run: {json.dumps(last_failed, ensure_ascii=False)}")
+            last_failed_report_summary = planning_context.get("last_failed_report_summary")
+            if last_failed_report_summary:
+                instructions.append(f"Last failed run report summary: {last_failed_report_summary}")
+            recent_failure_pattern = planning_context.get("recent_failure_pattern")
+            if recent_failure_pattern:
+                instructions.append(f"Recent failure pattern: {json.dumps(recent_failure_pattern, ensure_ascii=False)}")
+            approval_pressure = planning_context.get("approval_pressure")
+            if approval_pressure:
+                instructions.append(f"Approval pressure: {json.dumps(approval_pressure, ensure_ascii=False)}")
         return "\n".join(instructions)
 
     def _parse_plan(self, response: str) -> Plan:
