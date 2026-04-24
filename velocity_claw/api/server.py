@@ -475,9 +475,9 @@ def create_app() -> FastAPI:
         body.append("<h2>Queue jobs</h2>")
         if queue_jobs:
             body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-            body.append("<tr><th>Job ID</th><th>Task</th><th>Status</th><th>Attempts</th><th>Worker Slot</th></tr>")
+            body.append("<tr><th>Job ID</th><th>Task</th><th>Status</th><th>Attempts</th><th>Terminal reason</th><th>Worker Slot</th></tr>")
             for job in queue_jobs:
-                body.append(f"<tr><td><code>{job['job_id']}</code></td><td>{job['task']}</td><td>{badge(job['status'])}</td><td>{job['attempts']}</td><td>{job.get('worker_slot') or ''}</td></tr>")
+                body.append(f"<tr><td><code>{job['job_id']}</code></td><td>{job['task']}</td><td>{badge(job['status'])}</td><td>{job['attempts']}</td><td>{job.get('terminal_reason') or ''}</td><td>{job.get('worker_slot') or ''}</td></tr>")
             body.append("</table>")
         else:
             body.append("<p>No queue jobs recorded.</p>")
