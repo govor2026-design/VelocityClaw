@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from velocity_claw.api.ops_console import build_operations_console
 from velocity_claw.config.settings import load_settings
 from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.core.queue import RunQueue
@@ -124,10 +125,33 @@ def create_app() -> FastAPI:
                     return {"raw": artifact.get("content")}
         return None
 
+    def build_console_snapshot() -> dict:
+        refresh_runtime_metrics()
+        release_state = app.state.release.evaluate()
+        queue_jobs = app.state.queue.list_jobs()
+        approvals = app.state.agent.list_pending_approvals()
+        provider_observability = app.state.agent.router.get_router_observability()
+        last_failed = app.state.agent.resume_last_failed_run()
+        metrics = app.state.metrics.snapshot()
+        return build_operations_console(
+            release_state=release_state,
+            queue_jobs=queue_jobs,
+            approvals=approvals,
+            provider_observability=provider_observability,
+            last_failed=last_failed,
+            metrics=metrics,
+            active_workers=app.state.queue.active_count(),
+            max_concurrency=app.state.queue.max_concurrency,
+        )
+
     @app.get("/health")
     def health():
         refresh_runtime_metrics()
         return {"status": "ok", "metrics": app.state.metrics.snapshot()}
+
+    @app.get("/ops/console")
+    def ops_console():
+        return build_console_snapshot()
 
     @app.get("/release/readiness")
     def release_readiness():
@@ -414,7 +438,7 @@ def create_app() -> FastAPI:
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard():
-        refresh_runtime_metrics()
+        console = build_console_snapshot()
         recent = app.state.agent.memory.list_recent_runs(limit=10)
         approvals = app.state.agent.list_pending_approvals()
         profile = app.state.profiles.get_capability_matrix()
@@ -436,7 +460,15 @@ def create_app() -> FastAPI:
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
             f"<p>Queue concurrency: <b>{app.state.queue.max_concurrency}</b> | Active workers: <b>{app.state.queue.active_count()}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/release/readiness'>/release/readiness</a> | <a href='/providers/health'>/providers/health</a> | <a href='/providers/observability'>/providers/observability</a> | <a href='/git/summary'>/git/summary</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/ops/console'>/ops/console</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/release/readiness'>/release/readiness</a> | <a href='/providers/health'>/providers/health</a> | <a href='/providers/observability'>/providers/observability</a> | <a href='/git/summary'>/git/summary</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<h2>Operations console</h2>",
+            f"<p>Release: <b>{console['release']['readiness']}</b> ({console['release']['score']}/{console['release']['total_checks']}) | Queue running: <b>{console['queue']['running']}</b> | Queue failed: <b>{console['queue']['failed']}</b> | Approvals pending: <b>{console['approvals']['pending']}</b> | Failed routes: <b>{console['providers'].get('failed_routes', 0)}</b></p>",
+        ]
+        if console.get("last_failed_run"):
+            body.append(f"<p>Last failed run: <code>{console['last_failed_run']['run_id']}</code> — {console['last_failed_run']['task']} — <a href='/runs/{console['last_failed_run']['run_id']}/view'>open</a></p>")
+        else:
+            body.append("<p>No failed runs currently recorded.</p>")
+        body.extend([
             "<h2>Release readiness</h2>",
             f"<p>Status: <b>{release_state.get('readiness')}</b> | Score: <b>{release_state.get('score')}/{release_state.get('total_checks')}</b></p>",
             f"<p>Blocking issues: <b>{len(release_state.get('blocking_issues', []))}</b> | Warnings: <b>{len(release_state.get('warnings', []))}</b></p>",
@@ -447,7 +479,7 @@ def create_app() -> FastAPI:
             f"<pre>{(git_state.get('diff_stat') or '(no diff)')[:1500]}</pre>",
             "<h2>Metrics</h2>",
             "<ul>",
-        ]
+        ])
         for key, value in metrics_snapshot.items():
             body.append(f"<li>{key}: <b>{value}</b></li>")
         body.append("</ul>")
