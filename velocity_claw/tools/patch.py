@@ -53,7 +53,7 @@ class PatchEngine:
             raise PatchError("Patch must include op and path")
 
         resolved = self.fs._validate_path(path)
-        details = {"resolved_path": str(resolved)}
+        details = {"resolved_path": str(resolved), "safety_checks": []}
         try:
             original = self.fs.read(path) if resolved.exists() else ""
         except ValueError as e:
@@ -68,6 +68,10 @@ class PatchEngine:
         details.update(patch_details)
         changed = updated != original
         diff = self._make_diff(str(Path(path)), original, updated)
+
+        if not changed:
+            details["safety_checks"].append("no_op_patch_detected")
+            details["change_reason"] = "patch_produced_no_changes"
 
         if not preview_only and changed:
             try:
@@ -101,9 +105,15 @@ class PatchEngine:
             position = patch.get("position", "after")
             idx = content.find(anchor)
             if position == "before":
-                return content[:idx] + new_text + content[idx:], {"anchor_matches": count, "position": position}
-            idx += len(anchor)
-            return content[:idx] + new_text + content[idx:], {"anchor_matches": count, "position": position}
+                updated = content[:idx] + new_text + content[idx:]
+            else:
+                idx += len(anchor)
+                updated = content[:idx] + new_text + content[idx:]
+            return updated, {
+                "anchor_matches": count,
+                "position": position,
+                "inserted_bytes": len(new_text.encode("utf-8")),
+            }
         if op == "replace_block":
             target = patch.get("target")
             replacement = patch.get("replacement")
@@ -111,28 +121,41 @@ class PatchEngine:
                 raise PatchError("replace_block requires target")
             if replacement is None:
                 raise PatchError("replace_block requires replacement")
+            if target == replacement:
+                raise PatchError("replace_block would be a no-op")
+            if target.strip() and replacement == "":
+                raise PatchError("replace_block empty replacement blocked")
             count = content.count(target)
             if count == 0:
                 raise PatchError("target block not found")
             if count > 1:
                 raise PatchError("ambiguous target block match")
-            return content.replace(target, replacement, 1), {"target_matches": count}
+            updated = content.replace(target, replacement, 1)
+            return updated, {
+                "target_matches": count,
+                "target_bytes": len(target.encode("utf-8")),
+                "replacement_bytes": len(replacement.encode("utf-8")),
+            }
         if op == "append":
             new_text = patch.get("content", "")
+            if not new_text:
+                raise PatchError("append requires non-empty content")
             return content + new_text, {"appended_bytes": len(new_text.encode("utf-8"))}
         if op == "replace_function":
-            updated = self._replace_symbol_block(content, patch.get("name"), "function", patch.get("replacement"))
-            return updated, {"symbol_kind": "function", "symbol_name": patch.get("name")}
+            updated, symbol_details = self._replace_symbol_block(content, patch.get("name"), "function", patch.get("replacement"))
+            return updated, symbol_details
         if op == "replace_class":
-            updated = self._replace_symbol_block(content, patch.get("name"), "class", patch.get("replacement"))
-            return updated, {"symbol_kind": "class", "symbol_name": patch.get("name")}
+            updated, symbol_details = self._replace_symbol_block(content, patch.get("name"), "class", patch.get("replacement"))
+            return updated, symbol_details
         raise PatchError(f"Unsupported patch op: {op}")
 
-    def _replace_symbol_block(self, content: str, name: Optional[str], kind: str, replacement: Optional[str]) -> str:
+    def _replace_symbol_block(self, content: str, name: Optional[str], kind: str, replacement: Optional[str]) -> tuple[str, dict]:
         if not name:
             raise PatchError(f"replace_{kind} requires name")
         if replacement is None:
             raise PatchError(f"replace_{kind} requires replacement")
+        if replacement.strip() == "":
+            raise PatchError(f"replace_{kind} empty replacement blocked")
         lines = content.splitlines(keepends=True)
         try:
             tree = ast.parse(content)
@@ -152,9 +175,17 @@ class PatchEngine:
         node = matches[0]
         start = node.lineno - 1
         end = node.end_lineno
+        original_block = "".join(lines[start:end])
         replacement_text = replacement if replacement.endswith("\n") else replacement + "\n"
+        if original_block == replacement_text:
+            raise PatchError(f"replace_{kind} would be a no-op")
         new_lines = lines[:start] + [replacement_text] + lines[end:]
-        return "".join(new_lines)
+        return "".join(new_lines), {
+            "symbol_kind": kind,
+            "symbol_name": name,
+            "replaced_lines": end - start,
+            "replacement_bytes": len(replacement_text.encode("utf-8")),
+        }
 
     def _make_diff(self, path: str, original: str, updated: str) -> str:
         return "".join(
