@@ -48,7 +48,9 @@ class GitPrWorkflowIntelligenceV1Tests(unittest.TestCase):
             }):
                 response = client.get("/git/summary")
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json()["branch"], "main")
+                payload = response.json()
+                self.assertEqual(payload["status"], "ok")
+                self.assertEqual(payload["git"]["branch"], "main")
 
                 dashboard = client.get("/dashboard")
                 self.assertEqual(dashboard.status_code, 200)

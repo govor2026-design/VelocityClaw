@@ -40,9 +40,11 @@ class TaskQueueWorkerResilienceV2Tests(unittest.IsolatedAsyncioTestCase):
             response = client.get(f"/queue/{job.job_id}")
             self.assertEqual(response.status_code, 200)
             payload = response.json()
-            self.assertEqual(payload["job_id"], job.job_id)
-            self.assertEqual(payload["terminal_reason"], "cancelled_by_operator")
-            self.assertIn("history", payload)
+            self.assertEqual(payload["status"], "ok")
+            job_data = payload["job"]
+            self.assertEqual(job_data["job_id"], job.job_id)
+            self.assertEqual(job_data["terminal_reason"], "cancelled_by_operator")
+            self.assertIn("history", job_data)
 
     async def test_dashboard_shows_queue_terminal_reason(self):
         workspace = tempfile.mkdtemp()

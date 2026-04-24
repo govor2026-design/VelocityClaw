@@ -100,6 +100,11 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    def ok(payload_key: str, payload: Any, **extra: Any) -> dict:
+        body = {"status": "ok", payload_key: payload}
+        body.update(extra)
+        return body
+
     def refresh_runtime_metrics() -> None:
         approvals_pending = len(app.state.agent.list_pending_approvals())
         queue_jobs = app.state.queue.list_jobs()
@@ -147,15 +152,17 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health():
         refresh_runtime_metrics()
-        return {"status": "ok", "metrics": app.state.metrics.snapshot()}
+        return ok("metrics", app.state.metrics.snapshot())
 
     @app.get("/ops/console")
     def ops_console():
-        return build_console_snapshot()
+        snapshot = build_console_snapshot()
+        snapshot["status"] = "ok"
+        return snapshot
 
     @app.get("/release/readiness")
     def release_readiness():
-        return app.state.release.evaluate()
+        return ok("release", app.state.release.evaluate())
 
     @app.post("/task", response_model=TaskResponse)
     @limiter.limit("10/minute")
@@ -202,44 +209,44 @@ def create_app() -> FastAPI:
 
     @app.get("/modes")
     def modes():
-        return {"modes": app.state.agent.get_status()["available_modes"]}
+        return ok("modes", app.state.agent.get_status()["available_modes"])
 
     @app.get("/profiles")
     def profiles():
-        return {"active": app.state.settings.execution_profile, "profiles": app.state.profiles.list_profiles()}
+        return ok("profiles", app.state.profiles.list_profiles(), active=app.state.settings.execution_profile)
 
     @app.get("/profiles/active")
     def active_profile():
-        return app.state.profiles.get_capability_matrix()
+        return ok("profile", app.state.profiles.get_capability_matrix())
 
     @app.get("/profiles/explain/{tool_name}")
     def explain_profile_tool(tool_name: str):
         tool = tool_name.replace("__", ".")
-        return app.state.profiles.explain_tool_access(tool)
+        return ok("explanation", app.state.profiles.explain_tool_access(tool), tool=tool)
 
     @app.get("/providers/health")
     def provider_health():
-        return {"providers": app.state.agent.router.get_provider_health()}
+        return ok("providers", app.state.agent.router.get_provider_health())
 
     @app.get("/providers/observability")
     def provider_observability():
-        return app.state.agent.router.get_router_observability()
+        return ok("observability", app.state.agent.router.get_router_observability())
 
     @app.get("/git/summary")
     def git_summary():
-        return app.state.agent.executor.git.inspect_repo()
+        return ok("git", app.state.agent.executor.git.inspect_repo())
 
     @app.get("/memory/context")
     def memory_context():
-        return app.state.agent.get_repo_context_summary()
+        return ok("context", app.state.agent.get_repo_context_summary())
 
     @app.get("/memory/resume")
     def memory_resume(task: str):
-        return app.state.agent.get_resume_context(task)
+        return ok("resume", app.state.agent.get_resume_context(task), task=task)
 
     @app.post("/approvals/explain")
     def explain_approval(payload: ApprovalExplainRequest):
-        return app.state.agent.explain_approval_requirement(payload.step, payload.profile_name)
+        return ok("explanation", app.state.agent.explain_approval_requirement(payload.step, payload.profile_name))
 
     @app.post("/queue/submit")
     @limiter.limit("10/minute")
@@ -247,16 +254,12 @@ def create_app() -> FastAPI:
         job = app.state.queue.enqueue(payload.task, payload.context)
         refresh_runtime_metrics()
         asyncio.create_task(app.state.queue.run_job(job.job_id, app.state.agent.run_task))
-        return {"job_id": job.job_id, "status": job.status}
+        return ok("job", {"job_id": job.job_id, "status": job.status})
 
     @app.get("/queue")
     def queue_list():
         refresh_runtime_metrics()
-        return {
-            "jobs": app.state.queue.list_jobs(),
-            "active_workers": app.state.queue.active_count(),
-            "max_concurrency": app.state.queue.max_concurrency,
-        }
+        return ok("jobs", app.state.queue.list_jobs(), active_workers=app.state.queue.active_count(), max_concurrency=app.state.queue.max_concurrency)
 
     @app.get("/queue/{job_id}")
     def queue_status(job_id: str):
@@ -264,7 +267,7 @@ def create_app() -> FastAPI:
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
         refresh_runtime_metrics()
-        return job.__dict__
+        return ok("job", job.__dict__)
 
     @app.post("/queue/{job_id}/cancel")
     @limiter.limit("20/minute")
@@ -273,7 +276,7 @@ def create_app() -> FastAPI:
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
         refresh_runtime_metrics()
-        return job.__dict__
+        return ok("job", job.__dict__)
 
     @app.post("/queue/{job_id}/requeue")
     @limiter.limit("20/minute")
@@ -282,7 +285,7 @@ def create_app() -> FastAPI:
         if not job:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
         refresh_runtime_metrics()
-        return job.__dict__
+        return ok("job", job.__dict__)
 
     @app.post("/auto-fix")
     @limiter.limit("5/minute")
@@ -304,12 +307,12 @@ def create_app() -> FastAPI:
     @app.get("/metrics")
     def metrics():
         refresh_runtime_metrics()
-        return app.state.metrics.snapshot()
+        return ok("metrics", app.state.metrics.snapshot())
 
     @app.get("/diagnostics")
     def diagnostics():
         refresh_runtime_metrics()
-        return {
+        return ok("diagnostics", {
             "metrics": app.state.metrics.snapshot(),
             "diagnostics": app.state.metrics.diagnostics_summary(),
             "last_failed_run": app.state.agent.resume_last_failed_run(),
@@ -318,7 +321,7 @@ def create_app() -> FastAPI:
             "max_concurrency": app.state.queue.max_concurrency,
             "provider_health": app.state.agent.router.get_provider_health(),
             "provider_observability": app.state.agent.router.get_router_observability(),
-        }
+        })
 
     @app.post("/reset", response_model=ResetResponse)
     def reset():
@@ -326,28 +329,28 @@ def create_app() -> FastAPI:
 
     @app.get("/runs")
     def runs():
-        return {"recent": app.state.agent.memory.list_recent_runs(), "last_failed": app.state.agent.resume_last_failed_run()}
+        return ok("runs", app.state.agent.memory.list_recent_runs(), last_failed=app.state.agent.resume_last_failed_run())
 
     @app.get("/runs/{run_id}")
     def run_detail(run_id: str):
         data = app.state.agent.memory.load_run(run_id)
         if not data:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
-        return data
+        return ok("run", data)
 
     @app.get("/runs/{run_id}/forensics")
     def run_forensics(run_id: str):
         data = app.state.agent.memory.load_run(run_id)
         if not data:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
-        return {"run_id": run_id, "forensics": data.get("forensics", {})}
+        return ok("forensics", data.get("forensics", {}), run_id=run_id)
 
     @app.get("/runs/{run_id}/artifacts")
     def run_artifacts(run_id: str):
         data = app.state.agent.memory.load_run(run_id)
         if not data:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
-        return {"run_id": run_id, "grouped_artifacts": group_artifacts(data)}
+        return ok("artifacts", group_artifacts(data), run_id=run_id)
 
     @app.get("/runs/{run_id}/planning-context")
     def run_planning_context(run_id: str):
@@ -357,7 +360,7 @@ def create_app() -> FastAPI:
         planning_context = load_artifact_json(data, "planning_context")
         if planning_context is None:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Planning context not found"})
-        return {"run_id": run_id, "planning_context": planning_context}
+        return ok("planning_context", planning_context, run_id=run_id)
 
     @app.get("/runs/{run_id}/resume-context")
     def run_resume_context(run_id: str):
@@ -367,7 +370,14 @@ def create_app() -> FastAPI:
         resume_context = load_artifact_json(data, "resume_context")
         if resume_context is None:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Resume context not found"})
-        return {"run_id": run_id, "resume_context": resume_context}
+        return ok("resume_context", resume_context, run_id=run_id)
+
+    @app.get("/runs/{run_id}/report")
+    def run_report(run_id: str):
+        data = app.state.agent.memory.load_run(run_id)
+        if not data:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        return ok("report", data.get("report", {}), run_id=run_id)
 
     @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
     def run_detail_view(run_id: str):
@@ -378,12 +388,15 @@ def create_app() -> FastAPI:
         planning_context = load_artifact_json(data, "planning_context")
         resume_context = load_artifact_json(data, "resume_context")
         forensics = data.get("forensics") or {}
+        report = data.get("report") or {}
         body = [
             "<html><body style='font-family:Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px'>",
             f"<h1>Run detail: {run_id}</h1>",
             f"<p>Task: <b>{data['task']}</b></p>",
             f"<p>Status: <b>{data['status']}</b></p>",
             f"<p>Created: {data['created_at']}</p>",
+            "<h2>Run report</h2>",
+            f"<p>{report.get('executive_summary') or 'No report summary available.'}</p>",
             "<h2>Run forensics</h2>",
             f"<p>Steps: <b>{forensics.get('step_count', 0)}</b> | Artifacts: <b>{forensics.get('artifact_count', 0)}</b></p>",
             f"<pre>{json.dumps(forensics, ensure_ascii=False, indent=2)[:2500]}</pre>",
@@ -420,11 +433,11 @@ def create_app() -> FastAPI:
 
     @app.get("/runs/{run_id}/approval-history")
     def approval_history(run_id: str):
-        return {"run_id": run_id, "history": app.state.agent.get_approval_history(run_id)}
+        return ok("history", app.state.agent.get_approval_history(run_id), run_id=run_id)
 
     @app.get("/approvals")
     def approvals():
-        return {"pending": app.state.agent.list_pending_approvals()}
+        return ok("pending", app.state.agent.list_pending_approvals())
 
     @app.post("/approvals/{run_id}/{step_id}/approve")
     @limiter.limit("20/minute")
@@ -536,17 +549,17 @@ def create_app() -> FastAPI:
 
         body.append("<h2>Recent runs</h2>")
         body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th><th>Planning context</th><th>Resume context</th><th>Forensics</th></tr>")
+        body.append("<tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th><th>Planning context</th><th>Resume context</th><th>Forensics</th><th>Report</th></tr>")
         for run in recent:
             body.append(
-                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td><td><a href='/runs/{run['run_id']}/planning-context'>json</a></td><td><a href='/runs/{run['run_id']}/resume-context'>json</a></td><td><a href='/runs/{run['run_id']}/forensics'>json</a></td></tr>"
+                f"<tr><td><code>{run['run_id']}</code></td><td>{run['task']}</td><td>{badge(run['status'])}</td><td>{run['created_at']}</td><td><a href='/runs/{run['run_id']}/view'>open</a></td><td><a href='/runs/{run['run_id']}/planning-context'>json</a></td><td><a href='/runs/{run['run_id']}/resume-context'>json</a></td><td><a href='/runs/{run['run_id']}/forensics'>json</a></td><td><a href='/runs/{run['run_id']}/report'>json</a></td></tr>"
             )
         body.append("</table>")
 
         body.append("<h2>Last failed run</h2>")
         if last_failed:
             forensic = last_failed.get('forensics') or {}
-            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a> — <a href='/runs/{last_failed['run_id']}/forensics'>forensics</a></p>")
+            body.append(f"<p><code>{last_failed['run_id']}</code> — {last_failed['task']} — {badge(last_failed['status'])} — <a href='/runs/{last_failed['run_id']}/view'>details</a> — <a href='/runs/{last_failed['run_id']}/forensics'>forensics</a> — <a href='/runs/{last_failed['run_id']}/report'>report</a></p>")
             body.append(f"<p>Failed step: <b>{(forensic.get('failed_step') or {}).get('title') or 'n/a'}</b> | Artifacts: <b>{forensic.get('artifact_count', 0)}</b></p>")
         else:
             body.append("<p>No failed runs recorded.</p>")
