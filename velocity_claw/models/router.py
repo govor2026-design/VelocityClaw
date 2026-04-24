@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 import asyncio
 import time
 
@@ -103,7 +103,7 @@ class ModelRouter:
         state = self.provider_health.get(provider) or {}
         return bool(state.get("cooldown_until", 0.0) > time.time())
 
-    def _record_provider_success(self, provider: str, task_type: str) -> None:
+    def _record_provider_success(self, provider: str, task_type: Optional[str] = None) -> None:
         state = self.provider_health.setdefault(provider, {})
         state["requests"] = state.get("requests", 0) + 1
         state["successes"] = state.get("successes", 0) + 1
@@ -112,7 +112,7 @@ class ModelRouter:
         state["last_error"] = None
         state["cooldown_until"] = 0.0
 
-    def _record_provider_failure(self, provider: str, error: str, task_type: str) -> None:
+    def _record_provider_failure(self, provider: str, error: str, task_type: Optional[str] = None) -> None:
         state = self.provider_health.setdefault(provider, {})
         state["requests"] = state.get("requests", 0) + 1
         state["failures"] = state.get("failures", 0) + 1
