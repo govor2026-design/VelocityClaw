@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from datetime import datetime
 from typing import Dict, Optional
 from velocity_claw.config.settings import Settings
@@ -38,7 +39,30 @@ class VelocityClawAgent:
     def _build_planning_context(self, context: Optional[Dict]) -> Dict:
         merged = dict(context or {})
         merged.setdefault("project_root", self.settings.workspace_root)
-        merged["planning_context"] = self.memory.build_planning_context()
+        planning_context = self.memory.build_planning_context()
+
+        recent_runs = self.memory.list_recent_runs(limit=10)
+        recent_failed_runs = [item for item in recent_runs if item.get("status") == "failed"]
+        repeated_failed_tasks = [task for task, count in Counter(item.get("task") for item in recent_failed_runs).items() if task and count > 1]
+        approvals_pending = self.memory.list_pending_approvals()
+        last_failed = self.memory.get_last_failed_run()
+
+        planning_context["repeated_failed_tasks"] = repeated_failed_tasks
+        planning_context["approval_pressure"] = {
+            "pending_count": len(approvals_pending),
+            "recent_titles": [item.get("title") for item in approvals_pending[:5]],
+        }
+        if last_failed:
+            report = last_failed.get("report") or {}
+            forensics = last_failed.get("forensics") or {}
+            planning_context["last_failed_report_summary"] = report.get("executive_summary")
+            failed_step = forensics.get("failed_step") or {}
+            if failed_step:
+                planning_context["recent_failure_pattern"] = {
+                    "title": failed_step.get("title"),
+                    "tool": failed_step.get("tool"),
+                }
+        merged["planning_context"] = planning_context
         return merged
 
     async def run_mode(self, mode: str, task: str, context: Optional[Dict] = None) -> Dict:
