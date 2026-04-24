@@ -197,6 +197,10 @@ def create_app() -> FastAPI:
     def provider_health():
         return {"providers": app.state.agent.router.get_provider_health()}
 
+    @app.get("/providers/observability")
+    def provider_observability():
+        return app.state.agent.router.get_router_observability()
+
     @app.get("/git/summary")
     def git_summary():
         return app.state.agent.executor.git.inspect_repo()
@@ -289,6 +293,7 @@ def create_app() -> FastAPI:
             "active_workers": app.state.queue.active_count(),
             "max_concurrency": app.state.queue.max_concurrency,
             "provider_health": app.state.agent.router.get_provider_health(),
+            "provider_observability": app.state.agent.router.get_router_observability(),
         }
 
     @app.post("/reset", response_model=ResetResponse)
@@ -419,6 +424,7 @@ def create_app() -> FastAPI:
         last_failed = app.state.agent.resume_last_failed_run()
         queue_jobs = app.state.queue.list_jobs()[:10]
         provider_health = app.state.agent.router.get_provider_health()
+        provider_observability = app.state.agent.router.get_router_observability()
         git_state = app.state.agent.executor.git.inspect_repo()
         release_state = app.state.release.evaluate()
 
@@ -430,10 +436,12 @@ def create_app() -> FastAPI:
             "<h1>Velocity Claw Dashboard</h1>",
             f"<p>Execution profile: <b>{app.state.settings.execution_profile}</b></p>",
             f"<p>Queue concurrency: <b>{app.state.queue.max_concurrency}</b> | Active workers: <b>{app.state.queue.active_count()}</b></p>",
-            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/release/readiness'>/release/readiness</a> | <a href='/git/summary'>/git/summary</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/providers/health'>/providers/health</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
+            "<p>Quick links: <a href='/status'>/status</a> | <a href='/metrics'>/metrics</a> | <a href='/diagnostics'>/diagnostics</a> | <a href='/release/readiness'>/release/readiness</a> | <a href='/providers/health'>/providers/health</a> | <a href='/providers/observability'>/providers/observability</a> | <a href='/git/summary'>/git/summary</a> | <a href='/memory/context'>/memory/context</a> | <a href='/memory/resume?task=fix'>/memory/resume</a> | <a href='/runs'>/runs</a> | <a href='/approvals'>/approvals</a> | <a href='/profiles'>/profiles</a> | <a href='/queue'>/queue</a></p>",
             "<h2>Release readiness</h2>",
             f"<p>Status: <b>{release_state.get('readiness')}</b> | Score: <b>{release_state.get('score')}/{release_state.get('total_checks')}</b></p>",
             f"<p>Blocking issues: <b>{len(release_state.get('blocking_issues', []))}</b> | Warnings: <b>{len(release_state.get('warnings', []))}</b></p>",
+            "<h2>Provider/router observability</h2>",
+            f"<p>Recent routes: <b>{provider_observability.get('summary', {}).get('route_count', 0)}</b> | Fallback successes: <b>{provider_observability.get('summary', {}).get('fallback_successes', 0)}</b> | Failed routes: <b>{provider_observability.get('summary', {}).get('failed_routes', 0)}</b></p>",
             "<h2>Git summary</h2>",
             f"<p>Branch: <b>{git_state.get('branch') or ''}</b> | Clean: <b>{git_state.get('is_clean')}</b></p>",
             f"<pre>{(git_state.get('diff_stat') or '(no diff)')[:1500]}</pre>",
@@ -457,10 +465,22 @@ def create_app() -> FastAPI:
 
         body.append("<h2>Provider health</h2>")
         body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-        body.append("<tr><th>Provider</th><th>Successes</th><th>Failures</th><th>Cooldown</th><th>Last error</th></tr>")
+        body.append("<tr><th>Provider</th><th>Requests</th><th>Successes</th><th>Failures</th><th>Cooldown</th><th>Last task type</th><th>Last error</th></tr>")
         for provider, state in provider_health.items():
-            body.append(f"<tr><td>{provider}</td><td>{state.get('successes', 0)}</td><td>{state.get('failures', 0)}</td><td>{badge('yes' if state.get('in_cooldown') else 'no')}</td><td>{state.get('last_error') or ''}</td></tr>")
+            body.append(f"<tr><td>{provider}</td><td>{state.get('requests', 0)}</td><td>{state.get('successes', 0)}</td><td>{state.get('failures', 0)}</td><td>{badge('yes' if state.get('in_cooldown') else 'no')}</td><td>{state.get('last_task_type') or ''}</td><td>{state.get('last_error') or ''}</td></tr>")
         body.append("</table>")
+
+        history = provider_observability.get('recent_route_history', [])
+        body.append("<h2>Recent route history</h2>")
+        if history:
+            body.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+            body.append("<tr><th>Task type</th><th>Status</th><th>Selected provider</th><th>Attempts</th></tr>")
+            for item in history[-10:]:
+                attempts = "; ".join(f"{a.get('provider')}:{a.get('status')}" for a in item.get('attempts', []))
+                body.append(f"<tr><td>{item.get('task_type')}</td><td>{item.get('status')}</td><td>{item.get('selected_provider') or ''}</td><td>{attempts}</td></tr>")
+            body.append("</table>")
+        else:
+            body.append("<p>No route history recorded yet.</p>")
 
         body.append("<h2>Repo context summary</h2>")
         body.append(f"<p>Project facts: <b>{len(repo_context.get('project_facts', {}))}</b> | Recent notes: <b>{len(repo_context.get('recent_notes', []))}</b> | Recent fix attempts: <b>{len(repo_context.get('recent_fix_attempts', []))}</b></p>")

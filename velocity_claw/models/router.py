@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 import asyncio
 import time
 
@@ -29,31 +29,52 @@ class ModelRouter:
             provider: {
                 "failures": 0,
                 "successes": 0,
+                "requests": 0,
                 "last_error": None,
                 "last_failure_at": None,
                 "last_success_at": None,
+                "last_task_type": None,
                 "cooldown_until": 0.0,
             }
             for provider in settings.provider_order
         }
+        self.route_history: List[Dict] = []
 
     async def route(self, task_type: str, prompt: str) -> Dict:
         providers = self._provider_candidates(task_type)
         errors: List[str] = []
+        route_attempt = {
+            "task_type": task_type,
+            "providers_considered": providers,
+            "attempts": [],
+            "selected_provider": None,
+            "status": "failed",
+            "started_at": time.time(),
+        }
         for provider in providers:
             if self._provider_in_cooldown(provider):
                 self.logger.info("Skipping provider %s because it is in cooldown", provider)
+                route_attempt["attempts"].append({"provider": provider, "status": "skipped_cooldown"})
                 continue
             self.logger.info("Routing %s task to provider %s", task_type, provider)
             try:
                 response = await self._call_provider(provider, prompt, task_type)
-                self._record_provider_success(provider)
+                self._record_provider_success(provider, task_type)
+                route_attempt["attempts"].append({"provider": provider, "status": "success"})
+                route_attempt["selected_provider"] = provider
+                route_attempt["status"] = "success"
+                route_attempt["completed_at"] = time.time()
+                self._record_route_attempt(route_attempt)
                 return self._normalize_response(provider, response)
             except (ProviderNotConfiguredError, ProviderRequestError, ProviderResponseError) as e:
                 self.logger.warning("Provider %s failed: %s", provider, e)
-                self._record_provider_failure(provider, str(e))
+                self._record_provider_failure(provider, str(e), task_type)
+                route_attempt["attempts"].append({"provider": provider, "status": "failed", "error": str(e)})
                 errors.append(f"{provider}: {e}")
                 continue
+        route_attempt["completed_at"] = time.time()
+        route_attempt["errors"] = errors
+        self._record_route_attempt(route_attempt)
         raise ProviderRequestError("All providers failed: " + "; ".join(errors) if errors else "No providers available")
 
     def choose_provider(self, task_type: str) -> str:
@@ -82,19 +103,27 @@ class ModelRouter:
         state = self.provider_health.get(provider) or {}
         return bool(state.get("cooldown_until", 0.0) > time.time())
 
-    def _record_provider_success(self, provider: str) -> None:
+    def _record_provider_success(self, provider: str, task_type: Optional[str] = None) -> None:
         state = self.provider_health.setdefault(provider, {})
+        state["requests"] = state.get("requests", 0) + 1
         state["successes"] = state.get("successes", 0) + 1
         state["last_success_at"] = time.time()
+        state["last_task_type"] = task_type
         state["last_error"] = None
         state["cooldown_until"] = 0.0
 
-    def _record_provider_failure(self, provider: str, error: str) -> None:
+    def _record_provider_failure(self, provider: str, error: str, task_type: Optional[str] = None) -> None:
         state = self.provider_health.setdefault(provider, {})
+        state["requests"] = state.get("requests", 0) + 1
         state["failures"] = state.get("failures", 0) + 1
         state["last_error"] = error
         state["last_failure_at"] = time.time()
+        state["last_task_type"] = task_type
         state["cooldown_until"] = time.time() + self.settings.provider_health_cooldown_seconds
+
+    def _record_route_attempt(self, payload: Dict) -> None:
+        self.route_history.append(payload)
+        self.route_history = self.route_history[-50:]
 
     def get_provider_health(self) -> Dict[str, Dict]:
         snapshot = {}
@@ -102,6 +131,20 @@ class ModelRouter:
             snapshot[provider] = dict(state)
             snapshot[provider]["in_cooldown"] = self._provider_in_cooldown(provider)
         return snapshot
+
+    def get_router_observability(self) -> Dict:
+        history = self.route_history[-20:]
+        fallback_count = sum(1 for item in history if len([a for a in item.get("attempts", []) if a.get("status") == "failed"]) > 0 and item.get("status") == "success")
+        failed_routes = sum(1 for item in history if item.get("status") == "failed")
+        return {
+            "providers": self.get_provider_health(),
+            "recent_route_history": history,
+            "summary": {
+                "route_count": len(history),
+                "fallback_successes": fallback_count,
+                "failed_routes": failed_routes,
+            },
+        }
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
