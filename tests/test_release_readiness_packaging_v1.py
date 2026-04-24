@@ -46,12 +46,14 @@ class ReleaseReadinessPackagingV1Tests(unittest.TestCase):
                 "total_checks": 10,
                 "checks": {"readme_present": True},
                 "blocking_issues": [],
-                "warnings": ["Dockerfile missing"],
+                "warnings": ["warning"],
                 "packaging_targets": {"cli": True, "api": True, "docker": False, "telegram": True},
             }):
                 response = client.get("/release/readiness")
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json()["readiness"], "ready")
+                payload = response.json()
+                self.assertEqual(payload["status"], "ok")
+                self.assertEqual(payload["release"]["readiness"], "ready")
 
                 dashboard = client.get("/dashboard")
                 self.assertEqual(dashboard.status_code, 200)
