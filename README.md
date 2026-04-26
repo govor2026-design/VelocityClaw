@@ -4,247 +4,191 @@
   <img src="assets/velocity_claw_falcon.png" alt="Velocity Claw - Falcon" width="400"/>
 </div>
 
-Velocity Claw — self-hosted AI dev-agent с модульной архитектурой для безопасного выполнения задач, работы с кодом, patch-редактирования, тестового цикла и сохранения execution trace.
+Velocity Claw is a self-hosted AI dev-agent for controlled code work, repo inspection, patch editing, test execution, run tracing, approvals, retry/replay workflows, and operator-driven deployment.
 
-Проект находится в состоянии **advanced MVP / strong foundation+**: ключевое ядро уже работает, тесты зелёные, часть product/runtime слоёв реализована, а часть более тяжёлых возможностей ещё остаётся для следующего этапа зрелости.
-
----
-
-## Что уже реально реализовано
-
-### Ядро агента
-- `core/agent.py` — orchestration: plan -> validate -> execute -> memory -> summary
-- `planner/planner.py` — JSON-планирование шагов
-- `executor/executor.py` — dispatch по tool + args
-- `models/router.py` — routing между LLM providers
-- `memory/store.py` — runs, steps, artifacts, preferences, project facts, fix attempts
-- `security/policy.py` — workspace/path/url/command validation
-- `security/access.py` — execution profiles + approval classification
-- `core/release.py` — release readiness evaluation
-
-### Code / Dev-Agent слой
-- `tools/patch.py` — patch engine:
-  - `insert`
-  - `replace_block`
-  - `append`
-  - `replace_function`
-  - `replace_class`
-  - diff preview
-- `tools/code_nav.py` — symbol-aware navigation:
-  - find function/class
-  - read symbol source
-  - list imports
-- `tools/test_runner.py` — test runner:
-  - `pytest`
-  - `python -m pytest`
-  - structured result
-  - parsed failures
-- `core/auto_fix.py` — bounded auto-fix loop foundation
-
-### Runtime modes / product layer
-- high-level modes:
-  - `analyze_repo`
-  - `fix_bug`
-  - `implement_feature`
-  - `write_tests`
-  - `repair_failed_tests`
-  - `refactor_module`
-  - `prepare_pr_summary`
-  - `summarize_architecture`
-- dry-run foundation
-- execution profiles:
-  - `safe`
-  - `dev`
-  - `owner`
-- approval workflow foundation
-- dashboard foundation (`/dashboard`)
-- queue foundation (`/queue/submit`, `/queue/{job_id}`)
-- metrics foundation (`/metrics`)
-- release readiness endpoint (`/release/readiness`)
-
-### Tools
-- `tools/fs.py` — filesystem operations
-- `tools/shell.py` — safe shell execution
-- `tools/git.py` — restricted git execution + safe repo inspection
-- `tools/http.py` — HTTP GET/POST with allowlist and limits
-- `tools/docker.py` — docker command wrapper foundation
-- `tools/editor.py` — helper text editor utilities
-
-### Interfaces
-- `api/server.py` — FastAPI
-- `telegram_bot/bot.py` — Telegram bot
-- `cli.py` — CLI entrypoint
-
-### Logging / traceability
-- `logs/logger.py` — centralized logger
-- artifacts are stored for diffs, stdout/stderr, failure data, summaries
-- resume last failed run foundation exists
+Current state: **advanced MVP / strong foundation+**. The project already has a working agent core, API, CLI, Telegram entrypoint, memory, approval gates, retry/replay, release readiness, and deployment templates. It is not yet a fully polished multi-user SaaS product, but the operational foundation is now solid.
 
 ---
 
-## Что пока ещё не завершено до полного product-grade состояния
+## What Velocity Claw does
 
-Следующие вещи уже partially implemented or scaffolded, но ещё не являются fully polished final systems:
+Velocity Claw is built around a safe execution loop:
 
-| Возможность | Состояние |
-|---|---|
-| Dashboard UI | minimal HTML foundation, не полноценный frontend |
-| Approval workflow | foundation есть, но не full resume-after-approve execution engine |
-| Execution profiles | foundation есть, но policy matrix можно усилять |
-| Auto-fix loop | bounded MVP foundation, не advanced reasoning repair system |
-| Queue / workers | in-memory foundation, не persistent worker infrastructure |
-| Metrics / observability | basic counters, не full production observability stack |
-| Multi-project / multi-user | не реализовано |
-| Advanced artifact explorer | базовый storage есть, но не full product experience |
+1. plan the task
+2. validate the tool/action against policy
+3. execute bounded steps
+4. store run/step/artifact trace
+5. expose reports, forensics, approvals, and retry context
+6. let the operator review or continue
+
+It is designed for self-hosted development automation where auditability and owner control matter more than blind autonomy.
 
 ---
 
-## Установка
+## Core capabilities
+
+### Agent core
+
+- planner-driven task orchestration
+- execution profiles: `safe`, `dev`, `owner`
+- security policy for paths, commands, URLs, and git operations
+- approval workflow with operator hints
+- persistent memory for runs, steps, artifacts, project facts, approvals, and fix attempts
+- retry/replay context from previous run reports and forensics
+
+### Code and repository tools
+
+- patch engine with diff preview and code-edit safety checks
+- symbol-aware navigation for functions/classes/imports
+- pytest runner with structured output and parsed failures
+- restricted git inspection and execution
+- safe filesystem, shell, HTTP, Docker, and editor utility tools
+
+### Operations layer
+
+- FastAPI server
+- HTML dashboard foundation
+- operations console snapshot
+- queue foundation
+- metrics and diagnostics
+- provider/router observability
+- release readiness evaluator
+- operator CLI admin commands
+- Telegram bot entrypoint
+
+### Deployment and release
+
+- hardened systemd service template
+- Docker Compose template
+- production Linux install script
+- unified deployment guide
+- version metadata
+- release checklist
+
+---
+
+## Quick start
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+python cli.py --status
 ```
 
----
+Run the API:
 
-## Настройка `.env`
-
-```env
-OPENAI_API_KEY=
-OPENROUTER_API_KEY=
-ANTHROPIC_API_KEY=
-GEMINI_API_KEY=
-OLLAMA_URL=http://127.0.0.1:11434
-
-TELEGRAM_TOKEN=
-TELEGRAM_CHAT_ID=
-
-LOG_LEVEL=INFO
-SAFE_MODE=true
-DEV_MODE=false
-TRUSTED_MODE=false
-MEMORY_ENABLED=true
-WORKSPACE_ROOT=.
-DRY_RUN=false
-EXECUTION_PROFILE=safe
-```
-
----
-
-## Запуск
-
-### CLI — выполнить задачу
-```bash
-python cli.py --task "Проанализируй структуру проекта"
-```
-
-### FastAPI
 ```bash
 python cli.py --server
 ```
 
-### Telegram
-```bash
-python cli.py --telegram
-```
-
-### Docker
-```bash
-docker build -t velocity-claw .
-docker run --env-file .env -p 8000:8000 velocity-claw
-```
-
----
-
-## Release readiness
-
-Теперь в проекте есть отдельный readiness layer:
+Run a task:
 
 ```bash
-curl http://127.0.0.1:8000/release/readiness
+python cli.py --task "Analyze the repository structure"
 ```
 
-Он показывает:
-- есть ли ключевые packaging/runtime файлы
-- есть ли тесты
-- есть ли CLI/API entrypoints
-- есть ли blocking issues
-- есть ли warnings
-- какие packaging targets сейчас реально готовы:
-  - CLI
-  - API
-  - Docker
-  - Telegram
-
-Это удобно для быстрой проверки перед упаковкой, Docker build или публикацией очередного релиза.
-
----
-
-## Основные API endpoints
-
-### Health / metrics / release
-```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/metrics
-curl http://127.0.0.1:8000/release/readiness
-```
-
-### Run task
-```bash
-curl -X POST http://127.0.0.1:8000/task \
-  -H "Content-Type: application/json" \
-  -d '{"task": "Проанализируй текущую структуру проекта"}'
-```
-
-### Run high-level mode
-```bash
-curl -X POST http://127.0.0.1:8000/modes/run \
-  -H "Content-Type: application/json" \
-  -d '{"mode": "analyze_repo", "task": "Проведи обзор репозитория"}'
-```
-
-### Queue
-```bash
-curl -X POST http://127.0.0.1:8000/queue/submit \
-  -H "Content-Type: application/json" \
-  -d '{"task": "Сделай обзор проекта"}'
-```
-
-### Auto-fix
-```bash
-curl -X POST http://127.0.0.1:8000/auto-fix \
-  -H "Content-Type: application/json" \
-  -d '{"target_test": "tests/test_tools.py", "patch_plan": [{"op": "replace_block", "path": "sample.py", "target": "old", "replacement": "new"}]}'
-```
-
-### Dashboard / approvals / runs
-```bash
-curl http://127.0.0.1:8000/dashboard
-curl http://127.0.0.1:8000/runs
-curl http://127.0.0.1:8000/approvals
-```
-
----
-
-## Тесты
+Run tests:
 
 ```bash
 pytest -q
 ```
 
-Сейчас тесты зелёные.
+---
+
+## Operator CLI
+
+The CLI supports local admin workflows:
+
+```bash
+python cli.py --status --json
+python cli.py --release-readiness --json
+python cli.py --runs --runs-limit 10 --json
+python cli.py --last-failed --json
+python cli.py --retry-context <RUN_ID> --json
+python cli.py --retry-run <RUN_ID> --json
+```
+
+Use JSON mode for scripts and operator tooling.
 
 ---
 
-## Структура проекта
+## API highlights
+
+Start the server with `python cli.py --server`, then use:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | service health |
+| `GET /metrics` | runtime metrics |
+| `GET /diagnostics` | diagnostics snapshot |
+| `GET /ops/console` | operations console data |
+| `GET /dashboard` | dashboard HTML |
+| `POST /task` | run a task |
+| `POST /modes/run` | run a high-level mode |
+| `POST /queue/submit` | enqueue a task |
+| `GET /runs` | list recent runs |
+| `GET /runs/{run_id}` | inspect a run |
+| `GET /runs/{run_id}/forensics` | inspect run forensics |
+| `GET /runs/{run_id}/report` | inspect run report |
+| `GET /runs/{run_id}/retry-context` | inspect retry context |
+| `POST /runs/{run_id}/retry` | retry a previous run |
+| `GET /approvals` | list pending approvals |
+| `POST /approvals/explain` | explain approval requirement |
+| `GET /release/readiness` | release readiness |
+| `GET /providers/observability` | provider/router observability |
+| `GET /git/summary` | safe repo summary |
+
+Read-side API endpoints use stable `status: ok` envelopes.
+
+---
+
+## Deployment
+
+Supported deployment paths:
+
+| Path | Best for | Files |
+| --- | --- | --- |
+| Production installer | Linux host with systemd | `deploy/install/*` |
+| Manual systemd | Controlled server setup | `deploy/systemd/*` |
+| Docker Compose | Container deployment | `deploy/docker/*` |
+
+Main guide:
+
+- `docs/DEPLOYMENT.md`
+
+Release guide:
+
+- `docs/RELEASE.md`
+
+Production defaults are conservative:
+
+- safe mode enabled
+- trusted mode disabled
+- execution profile: `safe`
+- shell execution disabled
+- state under `/var/lib/velocity-claw`
+
+---
+
+## Version
+
+Current version:
+
+- `VERSION`
+- `velocity_claw/__version__.py`
+
+Both files are tested for consistency.
+
+---
+
+## Project structure
 
 ```text
 velocity_claw/
-  api/            FastAPI server
-  config/         settings / env loading
+  api/            FastAPI server, retry routes, dashboard helpers
+  config/         settings and env loading
   core/           agent, queue, modes, metrics, auto_fix, release
   executor/       tool dispatch
   logs/           logger
@@ -252,22 +196,42 @@ velocity_claw/
   models/         provider routing
   planner/        plan generation
   prompts/        system prompts
-  security/       policy, profiles, approval classification
-  telegram_bot/   telegram interface
+  security/       policy, profiles, approval workflow
+  telegram_bot/   Telegram interface
   tools/          fs, shell, git, http, patch, code_nav, test_runner, docker, editor
+
+deploy/
+  docker/         Docker Compose deployment
+  install/        production Linux installer
+  systemd/        hardened systemd deployment
+
+docs/
+  DEPLOYMENT.md   unified deployment guide
+  RELEASE.md      release checklist and versioning guide
 ```
 
 ---
 
-## Текущее позиционирование
+## What is still not final
 
-Velocity Claw уже можно честно считать:
+Velocity Claw is strong, but not finished as a full commercial SaaS product.
 
-**advanced self-hosted dev-agent MVP / strong foundation+**
+Known next maturity areas:
 
-Но ещё не стоит называть его fully production-perfect autonomous system, потому что:
-- UI ещё минимальный
-- approval/queue/profile systems ещё можно сильно углублять
-- full operational maturity ещё впереди
+- richer dashboard frontend
+- deeper approval resume UX
+- stronger persistent worker infrastructure
+- multi-project and multi-user model
+- packaging automation and tagged releases
+- richer artifact explorer
+- production observability stack
 
-Именно это и есть следующий этап развития.
+---
+
+## Positioning
+
+Velocity Claw is currently best described as:
+
+**advanced self-hosted AI dev-agent MVP with strong operational foundation.**
+
+It is suitable for continued development, controlled server-side experimentation, repo automation workflows, and building toward a production-grade autonomous coding operator.
