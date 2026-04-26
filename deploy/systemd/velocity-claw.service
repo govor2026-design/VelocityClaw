@@ -1,0 +1,34 @@
+[Unit]
+Description=Velocity Claw API service
+Documentation=https://github.com/govor2026-design/VelocityClaw
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=velocityclaw
+Group=velocityclaw
+WorkingDirectory=/opt/velocityclaw
+EnvironmentFile=/etc/velocity-claw/velocity-claw.env
+ExecStart=/opt/velocityclaw/.venv/bin/python cli.py --server
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+KillSignal=SIGINT
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/velocity-claw /var/log/velocity-claw /opt/velocityclaw
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
