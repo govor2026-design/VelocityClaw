@@ -1,0 +1,33 @@
+services:
+  velocity-claw:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: velocity-claw:latest
+    container_name: velocity-claw
+    restart: unless-stopped
+    env_file:
+      - ./velocity-claw.env.example
+    ports:
+      - "8000:8000"
+    volumes:
+      - velocity_claw_data:/var/lib/velocity-claw
+      - velocity_claw_logs:/var/log/velocity-claw
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: false
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    command: ["python", "cli.py", "--server"]
+
+volumes:
+  velocity_claw_data:
+  velocity_claw_logs:
