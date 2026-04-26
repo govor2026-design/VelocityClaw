@@ -65,6 +65,54 @@ class VelocityClawAgent:
         merged["planning_context"] = planning_context
         return merged
 
+    def build_retry_context(self, run_id: str) -> Dict:
+        run = self.memory.load_run(run_id)
+        if not run:
+            raise ValueError("run_not_found")
+        forensics = run.get("forensics") or {}
+        report = run.get("report") or {}
+        failed_step = forensics.get("failed_step")
+        last_step = forensics.get("last_step")
+        return {
+            "retry": {
+                "source_run_id": run_id,
+                "source_task": run.get("task"),
+                "source_status": run.get("status"),
+                "executive_summary": report.get("executive_summary"),
+                "failed_step": failed_step,
+                "last_step": last_step,
+                "artifact_overview": report.get("artifact_overview"),
+                "step_overview": report.get("step_overview"),
+                "recommended_strategy": self._build_retry_strategy(run),
+            }
+        }
+
+    async def retry_run(self, run_id: str) -> Dict:
+        run = self.memory.load_run(run_id)
+        if not run:
+            raise ValueError("run_not_found")
+        retry_context = self.build_retry_context(run_id)
+        retry_task = f"Retry run {run_id}: {run.get('task')}"
+        return await self.run_task(retry_task, retry_context)
+
+    def _build_retry_strategy(self, run: Dict) -> dict:
+        forensics = run.get("forensics") or {}
+        failed_step = forensics.get("failed_step") or {}
+        if failed_step:
+            return {
+                "mode": "inspect_failed_step_first",
+                "hint": f"Start by inspecting failed step '{failed_step.get('title')}' using tool {failed_step.get('tool')} before editing.",
+            }
+        if run.get("status") == "awaiting_approval":
+            return {
+                "mode": "resolve_approval_first",
+                "hint": "Run is awaiting approval. Inspect approval history and pending approval payload before retrying.",
+            }
+        return {
+            "mode": "replan_from_report",
+            "hint": "Use previous report and forensics to replan conservatively before executing changes.",
+        }
+
     async def run_mode(self, mode: str, task: str, context: Optional[Dict] = None) -> Dict:
         return await self.run_task(build_mode_task(mode, task), context)
 
