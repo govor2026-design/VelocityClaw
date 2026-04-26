@@ -38,8 +38,15 @@ class RunReplayRetryOrchestrationV2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retry["source_task"], "fix broken tests")
         self.assertEqual(retry["source_status"], "failed")
         self.assertIn("executive_summary", retry)
+        self.assertIn("artifact_overview", retry)
+        self.assertIn("step_overview", retry)
         self.assertEqual(retry["failed_step"]["tool"], "test.run")
         self.assertEqual(retry["recommended_strategy"]["mode"], "inspect_failed_step_first")
+        self.assertIn("run failing tests", retry["recommended_strategy"]["hint"])
+
+    def test_build_retry_context_missing_run_raises(self):
+        with self.assertRaises(ValueError):
+            self.agent.build_retry_context("missing-run")
 
     async def test_retry_run_replans_with_retry_context(self):
         run_id = self._create_failed_run()
@@ -49,6 +56,7 @@ class RunReplayRetryOrchestrationV2Tests(unittest.IsolatedAsyncioTestCase):
         called_task, called_context = run_task.call_args.args
         self.assertIn(run_id, called_task)
         self.assertEqual(called_context["retry"]["source_run_id"], run_id)
+        self.assertEqual(called_context["retry"]["recommended_strategy"]["mode"], "inspect_failed_step_first")
 
 
 if __name__ == "__main__":
