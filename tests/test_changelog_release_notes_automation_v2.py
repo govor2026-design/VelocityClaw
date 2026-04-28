@@ -29,3 +29,4 @@ def test_write_release_notes_creates_output_file(tmp_path):
     assert written == output
     assert output.exists()
     assert "Velocity Claw" in output.read_text(encoding="utf-8")
+    assert output.name == "release-notes.md"
