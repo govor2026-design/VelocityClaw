@@ -21,9 +21,12 @@ def test_release_workflow_runs_required_validation_gates():
     assert "EXPECTED_TAG=\"v${VERSION_VALUE}\"" in content
 
 
-def test_release_workflow_uploads_release_summary_artifact():
+def test_release_workflow_uploads_release_artifacts():
     content = WORKFLOW.read_text(encoding="utf-8")
     assert "Generate release summary" in content
+    assert "Generate release notes" in content
+    assert "generate_release_notes.py" in content
     assert "dist/release-summary.md" in content
-    assert "actions/upload-artifact@v4" in content
-    assert "release-summary" in content
+    assert "dist/release-notes.md" in content
+    assert "upload-artifact" in content
+    assert "release-artifacts" in content
