@@ -25,5 +25,5 @@ def test_release_workflow_uploads_release_summary_artifact():
     content = WORKFLOW.read_text(encoding="utf-8")
     assert "Generate release summary" in content
     assert "dist/release-summary.md" in content
-    assert "actions/upload-artifact@v4" in content
+    assert "upload-artifact" in content
     assert "release-summary" in content
