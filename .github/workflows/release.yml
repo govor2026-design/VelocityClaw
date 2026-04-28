@@ -65,8 +65,14 @@ jobs:
             echo "- docs/DEPLOYMENT.md"
           } > dist/release-summary.md
 
-      - name: Upload release summary artifact
+      - name: Generate release notes
+        run: |
+          python scripts/generate_release_notes.py
+
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-summary
-          path: dist/release-summary.md
+          name: release-artifacts
+          path: |
+            dist/release-summary.md
+            dist/release-notes.md
