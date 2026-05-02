@@ -6,6 +6,7 @@ from pathlib import Path
 from velocity_claw.config.settings import load_settings
 from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.core.release import ReleaseReadinessEvaluator
+from velocity_claw.core.runtime import exit_with_boundary
 from velocity_claw.api.server import create_app
 from scripts.generate_release_notes import write_release_notes
 from scripts.validate_package import validate_package
@@ -168,4 +169,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    exit_with_boundary(main, component="cli")
