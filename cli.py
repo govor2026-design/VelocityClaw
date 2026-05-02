@@ -1,10 +1,14 @@
 import argparse
 import asyncio
 import json
+from pathlib import Path
+
 from velocity_claw.config.settings import load_settings
 from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.core.release import ReleaseReadinessEvaluator
 from velocity_claw.api.server import create_app
+from scripts.generate_release_notes import write_release_notes
+from scripts.validate_package import validate_package
 
 
 def build_agent():
@@ -57,6 +61,33 @@ def release_readiness_cli(as_json: bool = False):
     _print_payload(result, as_json=as_json)
 
 
+def validate_package_cli(as_json: bool = False):
+    result = validate_package(Path.cwd())
+    _print_payload(result, as_json=as_json)
+
+
+def generate_release_notes_cli(as_json: bool = False):
+    output_path = write_release_notes(Path.cwd())
+    result = {"status": "ok", "path": str(output_path)}
+    _print_payload(result, as_json=as_json)
+
+
+def release_checklist_cli(as_json: bool = False):
+    settings = load_settings()
+    readiness = ReleaseReadinessEvaluator(settings).evaluate()
+    package = validate_package(Path.cwd())
+    notes_path = write_release_notes(Path.cwd())
+    result = {
+        "status": "ok",
+        "version": package["version"],
+        "package_validation": package,
+        "release_readiness": readiness,
+        "release_notes_path": str(notes_path),
+        "ready": readiness.get("readiness") == "ready",
+    }
+    _print_payload(result, as_json=as_json)
+
+
 def list_runs_cli(limit: int, as_json: bool = False):
     agent = build_agent()
     result = {"runs": agent.memory.list_recent_runs(limit=limit)}
@@ -96,6 +127,9 @@ def main():
     parser.add_argument("--telegram", action="store_true", help="Start Telegram bot")
     parser.add_argument("--status", action="store_true", help="Show agent status")
     parser.add_argument("--release-readiness", action="store_true", help="Show release readiness report")
+    parser.add_argument("--validate-package", action="store_true", help="Validate package metadata")
+    parser.add_argument("--generate-release-notes", action="store_true", help="Generate release notes into dist/release-notes.md")
+    parser.add_argument("--release-checklist", action="store_true", help="Run local release checklist summary")
     parser.add_argument("--runs", action="store_true", help="List recent runs")
     parser.add_argument("--runs-limit", type=int, default=10, help="Limit for --runs output")
     parser.add_argument("--last-failed", action="store_true", help="Show last failed run")
@@ -112,6 +146,12 @@ def main():
         asyncio.run(run_task_cli(args.task, as_json=args.json))
     elif args.release_readiness:
         release_readiness_cli(as_json=args.json)
+    elif args.validate_package:
+        validate_package_cli(as_json=args.json)
+    elif args.generate_release_notes:
+        generate_release_notes_cli(as_json=args.json)
+    elif args.release_checklist:
+        release_checklist_cli(as_json=args.json)
     elif args.runs:
         list_runs_cli(limit=args.runs_limit, as_json=args.json)
     elif args.last_failed:
