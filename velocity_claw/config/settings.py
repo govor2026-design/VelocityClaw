@@ -53,6 +53,9 @@ class Settings:
     trusted_mode: bool = False
     memory_enabled: bool = True
     memory_db_path: str = "velocity_claw_memory.db"
+    memory_retention_days: int = 30
+    memory_retention_min_runs: int = 10
+    memory_cleanup_vacuum: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     telegram_token: Optional[str] = None
@@ -87,6 +90,9 @@ class Settings:
         self.trusted_mode = parse_bool(os.getenv("TRUSTED_MODE"), self.trusted_mode)
         self.memory_enabled = parse_bool(os.getenv("MEMORY_ENABLED"), self.memory_enabled)
         self.memory_db_path = os.getenv("MEMORY_DB_PATH", self.memory_db_path)
+        self.memory_retention_days = parse_int("MEMORY_RETENTION_DAYS", os.getenv("MEMORY_RETENTION_DAYS"), self.memory_retention_days, min_value=1)
+        self.memory_retention_min_runs = parse_int("MEMORY_RETENTION_MIN_RUNS", os.getenv("MEMORY_RETENTION_MIN_RUNS"), self.memory_retention_min_runs, min_value=0)
+        self.memory_cleanup_vacuum = parse_bool(os.getenv("MEMORY_CLEANUP_VACUUM"), self.memory_cleanup_vacuum)
         self.api_host = os.getenv("API_HOST", self.api_host)
         self.api_port = parse_int("API_PORT", os.getenv("API_PORT"), self.api_port, min_value=1, max_value=65535)
         self.telegram_token = os.getenv("TELEGRAM_TOKEN", self.telegram_token)
