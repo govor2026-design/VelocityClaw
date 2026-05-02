@@ -89,6 +89,12 @@ def release_checklist_cli(as_json: bool = False):
     _print_payload(result, as_json=as_json)
 
 
+def memory_cleanup_cli(days: int | None = None, keep_min_runs: int | None = None, vacuum: bool | None = None, as_json: bool = False):
+    agent = build_agent()
+    result = agent.memory.cleanup_retention(days=days, keep_min_runs=keep_min_runs, vacuum=vacuum)
+    _print_payload(result, as_json=as_json)
+
+
 def list_runs_cli(limit: int, as_json: bool = False):
     agent = build_agent()
     result = {"runs": agent.memory.list_recent_runs(limit=limit)}
@@ -131,6 +137,10 @@ def main():
     parser.add_argument("--validate-package", action="store_true", help="Validate package metadata")
     parser.add_argument("--generate-release-notes", action="store_true", help="Generate release notes into dist/release-notes.md")
     parser.add_argument("--release-checklist", action="store_true", help="Run local release checklist summary")
+    parser.add_argument("--memory-cleanup", action="store_true", help="Clean old SQLite memory records by retention policy")
+    parser.add_argument("--memory-retention-days", type=int, default=None, help="Override memory retention window in days")
+    parser.add_argument("--memory-keep-min-runs", type=int, default=None, help="Minimum newest runs to keep during cleanup")
+    parser.add_argument("--memory-no-vacuum", action="store_true", help="Skip SQLite VACUUM after cleanup")
     parser.add_argument("--runs", action="store_true", help="List recent runs")
     parser.add_argument("--runs-limit", type=int, default=10, help="Limit for --runs output")
     parser.add_argument("--last-failed", action="store_true", help="Show last failed run")
@@ -153,6 +163,13 @@ def main():
         generate_release_notes_cli(as_json=args.json)
     elif args.release_checklist:
         release_checklist_cli(as_json=args.json)
+    elif args.memory_cleanup:
+        memory_cleanup_cli(
+            days=args.memory_retention_days,
+            keep_min_runs=args.memory_keep_min_runs,
+            vacuum=not args.memory_no_vacuum,
+            as_json=args.json,
+        )
     elif args.runs:
         list_runs_cli(limit=args.runs_limit, as_json=args.json)
     elif args.last_failed:

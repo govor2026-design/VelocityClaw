@@ -1,7 +1,7 @@
 import sqlite3
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 from velocity_claw.config.settings import Settings
@@ -19,6 +19,7 @@ class MemoryStore:
             return
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS runs (
                     run_id TEXT PRIMARY KEY,
@@ -101,6 +102,11 @@ class MemoryStore:
                     FOREIGN KEY (run_id) REFERENCES runs (run_id)
                 )
             """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_run_id ON steps(run_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_run_id ON artifacts(run_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_fix_attempts_run_id ON fix_attempts(run_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_approval_history_run_id ON approval_history(run_id)")
 
     def create_run(self, task: str) -> str:
         if not self.enabled:
@@ -271,6 +277,49 @@ class MemoryStore:
             {"note_type": row[0], "content": row[1], "created_at": row[2]}
             for row in rows
         ]
+
+    def cleanup_retention(self, days: int | None = None, keep_min_runs: int | None = None, vacuum: bool | None = None) -> dict:
+        if not self.enabled:
+            return {"status": "disabled", "deleted": {}}
+        retention_days = days if days is not None else self.settings.memory_retention_days
+        min_runs = keep_min_runs if keep_min_runs is not None else self.settings.memory_retention_min_runs
+        do_vacuum = self.settings.memory_cleanup_vacuum if vacuum is None else vacuum
+        cutoff = (datetime.utcnow() - timedelta(days=retention_days)).isoformat()
+        deleted: dict[str, int] = {}
+        with sqlite3.connect(self.db_path) as conn:
+            keep_rows = conn.execute(
+                "SELECT run_id FROM runs ORDER BY created_at DESC LIMIT ?",
+                (min_runs,),
+            ).fetchall()
+            keep_run_ids = {row[0] for row in keep_rows}
+            old_rows = conn.execute(
+                "SELECT run_id FROM runs WHERE created_at < ?",
+                (cutoff,),
+            ).fetchall()
+            delete_run_ids = [row[0] for row in old_rows if row[0] not in keep_run_ids]
+            for table in ["steps", "artifacts", "fix_attempts", "approval_history", "runs"]:
+                deleted[table] = 0
+            if delete_run_ids:
+                placeholders = ",".join("?" for _ in delete_run_ids)
+                for table in ["steps", "artifacts", "fix_attempts", "approval_history"]:
+                    cursor = conn.execute(f"DELETE FROM {table} WHERE run_id IN ({placeholders})", delete_run_ids)
+                    deleted[table] = cursor.rowcount if cursor.rowcount is not None else 0
+                cursor = conn.execute(f"DELETE FROM runs WHERE run_id IN ({placeholders})", delete_run_ids)
+                deleted["runs"] = cursor.rowcount if cursor.rowcount is not None else 0
+            cursor = conn.execute("DELETE FROM project_notes WHERE created_at < ?", (cutoff,))
+            deleted["project_notes"] = cursor.rowcount if cursor.rowcount is not None else 0
+            conn.commit()
+        if do_vacuum:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("VACUUM")
+        return {
+            "status": "ok",
+            "retention_days": retention_days,
+            "keep_min_runs": min_runs,
+            "cutoff": cutoff,
+            "vacuum": do_vacuum,
+            "deleted": deleted,
+        }
 
     def build_repo_context_summary(self, limit: int = 5) -> dict:
         return {
@@ -493,15 +542,7 @@ class MemoryStore:
     def clear_short_term(self) -> None:
         if not self.enabled:
             return
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                DELETE FROM runs WHERE run_id NOT IN (
-                    SELECT run_id FROM runs ORDER BY created_at DESC LIMIT 10
-                )
-            """)
-            conn.execute("DELETE FROM steps WHERE run_id NOT IN (SELECT run_id FROM runs)")
-            conn.execute("DELETE FROM artifacts WHERE run_id NOT IN (SELECT run_id FROM runs)")
-            conn.execute("DELETE FROM approval_history WHERE run_id NOT IN (SELECT run_id FROM runs)")
+        self.cleanup_retention(days=1, keep_min_runs=10, vacuum=False)
 
     def list_recent_runs(self, limit: int = 20):
         if not self.enabled:
