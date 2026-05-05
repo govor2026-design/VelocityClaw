@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 from velocity_claw.logs.logger import configure_logging, get_logger, reset_logging_for_tests
 
@@ -35,6 +34,18 @@ def test_get_logger_writes_to_rotating_file(tmp_path, monkeypatch):
     content = (tmp_path / "velocity_claw.log").read_text(encoding="utf-8")
     assert "centralized logging smoke test" in content
     assert "velocity_claw.test" in content
+
+
+def test_get_logger_writes_errors_to_error_log(tmp_path, monkeypatch):
+    reset_logging_for_tests()
+    monkeypatch.setenv("LOG_DIR", str(tmp_path))
+    logger = get_logger("velocity_claw.error_test")
+    logger.error("centralized logging error test")
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    content = (tmp_path / "velocity_claw_errors.log").read_text(encoding="utf-8")
+    assert "centralized logging error test" in content
+    assert "velocity_claw.error_test" in content
 
 
 def test_invalid_log_level_falls_back_to_info(tmp_path):
