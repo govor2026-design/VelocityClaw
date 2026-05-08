@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from velocity_claw.logs.logger import get_logger
+
+LOGGER = get_logger("velocity_claw.api.errors")
+REQUEST_ID_HEADER = "X-Request-ID"
+
+
+def error_payload(*, code: str, message: str, request_id: str | None = None, details: Any = None) -> dict:
+    payload = {
+        "status": "error",
+        "error": {
+            "code": code,
+            "message": message,
+        },
+    }
+    if request_id:
+        payload["request_id"] = request_id
+    if details is not None:
+        payload["error"]["details"] = details
+    return payload
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid.uuid4())
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers[REQUEST_ID_HEADER] = request_id
+        return response
+
+
+def get_request_id(request: Request) -> str | None:
+    return getattr(request.state, "request_id", None)
+
+
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    request_id = get_request_id(request)
+    detail = exc.detail
+    if isinstance(detail, dict):
+        code = str(detail.get("error") or detail.get("code") or "http_error")
+        message = str(detail.get("detail") or detail.get("message") or "HTTP error")
+        details = detail if detail else None
+    else:
+        code = "http_error"
+        message = str(detail or "HTTP error")
+        details = None
+    LOGGER.warning("HTTP error request_id=%s status=%s code=%s message=%s", request_id, exc.status_code, code, message)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_payload(code=code, message=message, request_id=request_id, details=details),
+        headers=exc.headers,
+    )
+
+
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    request_id = get_request_id(request)
+    LOGGER.warning("Validation error request_id=%s errors=%s", request_id, exc.errors())
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=error_payload(
+            code="validation_error",
+            message="Request validation failed",
+            request_id=request_id,
+            details=exc.errors(),
+        ),
+    )
+
+
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = get_request_id(request)
+    LOGGER.exception("Unhandled API exception request_id=%s", request_id)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content=error_payload(
+            code="internal_error",
+            message="Internal server error",
+            request_id=request_id,
+        ),
+    )
+
+
+def install_api_error_handlers(app: FastAPI) -> FastAPI:
+    app.add_middleware(RequestIdMiddleware)
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(Exception, unhandled_exception_handler)
+    return app
