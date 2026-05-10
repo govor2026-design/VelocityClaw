@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import uuid
 from typing import Any
 
@@ -12,6 +13,8 @@ from velocity_claw.logs.logger import get_logger
 
 LOGGER = get_logger("velocity_claw.api.errors")
 REQUEST_ID_HEADER = "X-Request-ID"
+API_KEY_HEADER = "X-API-Key"
+PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
 
 
 def error_payload(*, code: str, message: str, request_id: str | None = None, details: Any = None) -> dict:
@@ -36,6 +39,26 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
+
+
+class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        expected_key = getattr(request.app.state.settings, "api_key", None)
+        if not expected_key or request.url.path in PUBLIC_PATHS:
+            return await call_next(request)
+        supplied_key = request.headers.get(API_KEY_HEADER)
+        authorization = request.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            supplied_key = authorization.removeprefix("Bearer ").strip()
+        if supplied_key and secrets.compare_digest(str(supplied_key), str(expected_key)):
+            return await call_next(request)
+        request_id = get_request_id(request)
+        LOGGER.warning("Unauthorized API request request_id=%s path=%s", request_id, request.url.path)
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content=error_payload(code="unauthorized", message="Valid API key required", request_id=request_id),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 def get_request_id(request: Request) -> str | None:
@@ -89,6 +112,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 def install_api_error_handlers(app: FastAPI) -> FastAPI:
+    app.add_middleware(ApiKeyAuthMiddleware)
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
