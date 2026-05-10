@@ -23,6 +23,8 @@ The installer uses the systemd deployment template from `deploy/systemd` and pre
 
 The service starts in safe mode with the safe execution profile and shell execution disabled by default. Git execution is also disabled by default.
 
+In short: shell/git execution disabled by default.
+
 ## API key handling
 
 On first install, the installer copies the systemd env template to `/etc/velocity-claw/velocity-claw.env` and replaces the placeholder `VELOCITY_CLAW_API_KEY` with a random key generated locally on the target host.
