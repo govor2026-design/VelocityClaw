@@ -33,6 +33,9 @@ dependencies = [
   "pydantic==2.13.2",
   "slowapi==0.1.9",
   "limits==5.8.0",
+  "openai==2.9.0",
+  "anthropic==0.75.0",
+  "google-generativeai==0.8.5",
 ]
 
 [project.optional-dependencies]
