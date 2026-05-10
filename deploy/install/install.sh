@@ -9,6 +9,7 @@ STATE_DIR="${STATE_DIR:-/var/lib/velocity-claw}"
 LOG_DIR="${LOG_DIR:-/var/log/velocity-claw}"
 SERVICE_NAME="${SERVICE_NAME:-velocity-claw}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+API_KEY_PLACEHOLDER="change-this-long-random-key"
 
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -24,9 +25,23 @@ require_file() {
   fi
 }
 
+generate_api_key() {
+  "$PYTHON_BIN" - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+}
+
+ensure_group() {
+  if ! getent group "$APP_GROUP" >/dev/null 2>&1; then
+    groupadd --system "$APP_GROUP"
+  fi
+}
+
 create_user() {
+  ensure_group
   if ! id "$APP_USER" >/dev/null 2>&1; then
-    useradd --system --home "$STATE_DIR" --shell /usr/sbin/nologin "$APP_USER"
+    useradd --system --gid "$APP_GROUP" --home "$STATE_DIR" --shell /usr/sbin/nologin "$APP_USER"
   fi
 }
 
@@ -50,11 +65,28 @@ install_python_env() {
   fi
 }
 
+ensure_api_key() {
+  local env_file="$1"
+  local generated_key
+
+  if ! grep -q '^VELOCITY_CLAW_API_KEY=' "$env_file"; then
+    generated_key="$(generate_api_key)"
+    printf '\nVELOCITY_CLAW_API_KEY=%s\n' "$generated_key" >> "$env_file"
+    return
+  fi
+
+  if grep -q "^VELOCITY_CLAW_API_KEY=${API_KEY_PLACEHOLDER}$" "$env_file"; then
+    generated_key="$(generate_api_key)"
+    sed -i "s|^VELOCITY_CLAW_API_KEY=.*|VELOCITY_CLAW_API_KEY=${generated_key}|" "$env_file"
+  fi
+}
+
 install_config() {
   require_file "$APP_DIR/deploy/systemd/velocity-claw.env.example"
   if [ ! -f "$CONFIG_DIR/velocity-claw.env" ]; then
     cp "$APP_DIR/deploy/systemd/velocity-claw.env.example" "$CONFIG_DIR/velocity-claw.env"
   fi
+  ensure_api_key "$CONFIG_DIR/velocity-claw.env"
   chown root:"$APP_GROUP" "$CONFIG_DIR/velocity-claw.env"
   chmod 0640 "$CONFIG_DIR/velocity-claw.env"
 }
@@ -80,7 +112,7 @@ State: $STATE_DIR
 Logs: $LOG_DIR
 
 Next steps:
-1. Review $CONFIG_DIR/velocity-claw.env
+1. Review $CONFIG_DIR/velocity-claw.env and keep VELOCITY_CLAW_API_KEY private
 2. Start the service with: systemctl start $SERVICE_NAME
 3. Check status with: systemctl status $SERVICE_NAME --no-pager
 EOF
