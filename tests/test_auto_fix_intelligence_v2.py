@@ -72,7 +72,7 @@ class AutoFixIntelligenceV2Tests(unittest.TestCase):
         settings = Settings(workspace_root=workspace, memory_db_path=db_path)
         with patch("velocity_claw.api.server.load_settings", return_value=settings):
             app = create_app()
-            client = TestClient(app)
+            client = TestClient(app, client=("auto-fix-test-client", 50000))
             with patch.object(app.state.agent, "run_auto_fix", return_value={
                 "mode": "auto_fix",
                 "max_attempts": 2,
