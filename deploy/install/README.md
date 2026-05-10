@@ -21,7 +21,7 @@ It creates or updates:
 
 The installer uses the systemd deployment template from `deploy/systemd` and preserves the safe production defaults from `velocity-claw.env.example`.
 
-The service starts in safe mode with the safe execution profile and shell/git execution disabled by default.
+The service starts in safe mode with the safe execution profile and shell execution disabled by default. Git execution is also disabled by default.
 
 ## API key handling
 
