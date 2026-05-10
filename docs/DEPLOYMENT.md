@@ -27,6 +27,23 @@ The installer prepares:
 
 After installation, review `/etc/velocity-claw/velocity-claw.env` before starting the service.
 
+## API authentication
+
+All API routes except `/health` are protected. Set a long random value before exposing the service:
+
+```bash
+VELOCITY_CLAW_API_KEY=change-this-long-random-key
+```
+
+Clients can authenticate with either header:
+
+```text
+X-API-Key: <key>
+Authorization: Bearer <key>
+```
+
+If no API key is configured, protected routes fail closed instead of running open.
+
 ## Manual systemd deployment
 
 Use manual systemd deployment when you want to copy and adjust unit files yourself.
@@ -76,8 +93,11 @@ All deployment paths default to conservative runtime settings:
 - trusted mode disabled
 - execution profile: `safe`
 - shell execution disabled
+- git execution disabled
 - memory enabled
 - state stored under `/var/lib/velocity-claw`
+
+Enable shell or git only on isolated, trusted deployments where the operator accepts the risk.
 
 ## Operational checks
 
@@ -85,6 +105,7 @@ For a healthy deployment, verify:
 
 - the API service starts successfully
 - `/health` responds through the configured API port
+- protected API routes require `X-API-Key` or Bearer authentication
 - logs are being written or available through the process manager
 - the memory database path is writable by the service user
 - the workspace directory exists and is writable by the service user
