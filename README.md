@@ -1,5 +1,9 @@
 # Velocity Claw
 
+![CI](https://github.com/govor2026-design/VelocityClaw/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 <div align="center">
   <img src="assets/velocity_claw_falcon.png" alt="Velocity Claw - Falcon" width="400"/>
 </div>
@@ -80,10 +84,16 @@ python cli.py --status
 Run the API:
 
 ```bash
-python cli.py --server
+API_KEY="change-this-long-random-key" python cli.py --server
 ```
 
-Run a task:
+Call a protected API endpoint:
+
+```bash
+curl -H "X-API-Key: change-this-long-random-key" http://127.0.0.1:8000/status
+```
+
+Run a task from CLI:
 
 ```bash
 python cli.py --task "Analyze the repository structure"
@@ -114,13 +124,36 @@ Use JSON mode for scripts and operator tooling.
 
 ---
 
+## API security
+
+All API routes except `GET /health` are protected by API-key middleware.
+
+Supported authentication headers:
+
+```text
+X-API-Key: <your-api-key>
+Authorization: Bearer <your-api-key>
+```
+
+Configure one of these environment variables before exposing the service:
+
+```bash
+API_KEY="change-this-long-random-key"
+# or
+VELOCITY_CLAW_API_KEY="change-this-long-random-key"
+```
+
+If no API key is configured, protected routes return `503 api_key_not_configured` instead of running open.
+
+---
+
 ## API highlights
 
 Start the server with `python cli.py --server`, then use:
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /health` | service health |
+| `GET /health` | public service health |
 | `GET /metrics` | runtime metrics |
 | `GET /diagnostics` | diagnostics snapshot |
 | `GET /ops/console` | operations console data |
@@ -141,6 +174,26 @@ Start the server with `python cli.py --server`, then use:
 | `GET /git/summary` | safe repo summary |
 
 Read-side API endpoints use stable `status: ok` envelopes.
+
+---
+
+## Security modes
+
+| Mode | Intended use | Default posture |
+| --- | --- | --- |
+| `safe` | Production/default operator mode | Read-oriented, approval-heavy, shell/git disabled unless explicitly enabled |
+| `dev` | Local development and debugging | More permissive workspace operations, still policy checked |
+| `owner` | Trusted single-owner automation | Highest capability profile; never use in production without `ALLOWED_USERS` |
+
+Important defaults:
+
+- `SAFE_MODE=true`
+- `TRUSTED_MODE=false`
+- `EXECUTION_PROFILE=safe`
+- `SHELL_ENABLED=false`
+- `GIT_ENABLED=false`
+
+Enable shell or git only when the deployment is trusted and isolated.
 
 ---
 
@@ -168,6 +221,7 @@ Production defaults are conservative:
 - trusted mode disabled
 - execution profile: `safe`
 - shell execution disabled
+- git execution disabled
 - state under `/var/lib/velocity-claw`
 
 ---
@@ -187,7 +241,7 @@ Both files are tested for consistency.
 
 ```text
 velocity_claw/
-  api/            FastAPI server, retry routes, dashboard helpers
+  api/            FastAPI server, auth, retry routes, dashboard helpers
   config/         settings and env loading
   core/           agent, queue, modes, metrics, auto_fix, release
   executor/       tool dispatch
