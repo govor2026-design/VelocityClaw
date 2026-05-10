@@ -5,9 +5,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+ENV_PREFIX = "VELOCITY_CLAW_"
+
 
 class SettingsValidationError(ValueError):
     pass
+
+
+def get_env(name: str, default: Optional[str] = None) -> Optional[str]:
+    prefixed_value = os.getenv(f"{ENV_PREFIX}{name}")
+    if prefixed_value is not None:
+        return prefixed_value
+    return os.getenv(name, default)
 
 
 def parse_bool(value: Optional[str], default: bool = False) -> bool:
@@ -73,8 +82,8 @@ class Settings:
     command_timeout: int = 120
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     max_http_response_bytes: int = 5 * 1024 * 1024  # 5MB
-    shell_enabled: bool = True
-    git_enabled: bool = True
+    shell_enabled: bool = False
+    git_enabled: bool = False
     dry_run: bool = False
     execution_profile: str = "safe"
     provider_request_timeout_seconds: int = 60
@@ -83,41 +92,41 @@ class Settings:
     provider_health_cooldown_seconds: int = 30
 
     def __post_init__(self):
-        self.env = os.getenv("ENV", self.env).strip().lower()
-        self.log_level = os.getenv("LOG_LEVEL", self.log_level).strip().upper()
-        self.safe_mode = parse_bool(os.getenv("SAFE_MODE"), self.safe_mode)
-        self.dev_mode = parse_bool(os.getenv("DEV_MODE"), self.dev_mode)
-        self.trusted_mode = parse_bool(os.getenv("TRUSTED_MODE"), self.trusted_mode)
-        self.memory_enabled = parse_bool(os.getenv("MEMORY_ENABLED"), self.memory_enabled)
-        self.memory_db_path = os.getenv("MEMORY_DB_PATH", self.memory_db_path)
-        self.memory_retention_days = parse_int("MEMORY_RETENTION_DAYS", os.getenv("MEMORY_RETENTION_DAYS"), self.memory_retention_days, min_value=1)
-        self.memory_retention_min_runs = parse_int("MEMORY_RETENTION_MIN_RUNS", os.getenv("MEMORY_RETENTION_MIN_RUNS"), self.memory_retention_min_runs, min_value=0)
-        self.memory_cleanup_vacuum = parse_bool(os.getenv("MEMORY_CLEANUP_VACUUM"), self.memory_cleanup_vacuum)
-        self.api_host = os.getenv("API_HOST", self.api_host)
-        self.api_port = parse_int("API_PORT", os.getenv("API_PORT"), self.api_port, min_value=1, max_value=65535)
-        self.telegram_token = os.getenv("TELEGRAM_TOKEN", self.telegram_token)
-        self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", self.telegram_chat_id)
-        self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
-        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", self.openrouter_api_key)
-        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", self.anthropic_api_key)
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY", self.gemini_api_key)
-        self.ollama_url = os.getenv("OLLAMA_URL", self.ollama_url)
-        self.allowed_users = parse_list(os.getenv("ALLOWED_USERS"))
-        self.default_model = os.getenv("DEFAULT_MODEL", self.default_model).strip()
-        self.lightweight_mode = parse_bool(os.getenv("LIGHTWEIGHT_MODE"), self.lightweight_mode)
-        self.workspace_root = os.getenv("WORKSPACE_ROOT", self.workspace_root)
-        self.allowed_hosts = parse_list(os.getenv("ALLOWED_HOSTS")) or self.allowed_hosts
-        self.command_timeout = parse_int("COMMAND_TIMEOUT", os.getenv("COMMAND_TIMEOUT"), self.command_timeout, min_value=1)
-        self.max_file_size = parse_int("MAX_FILE_SIZE", os.getenv("MAX_FILE_SIZE"), self.max_file_size, min_value=1)
-        self.max_http_response_bytes = parse_int("MAX_HTTP_RESPONSE_BYTES", os.getenv("MAX_HTTP_RESPONSE_BYTES"), self.max_http_response_bytes, min_value=1)
-        self.shell_enabled = parse_bool(os.getenv("SHELL_ENABLED"), self.shell_enabled)
-        self.git_enabled = parse_bool(os.getenv("GIT_ENABLED"), self.git_enabled)
-        self.dry_run = parse_bool(os.getenv("DRY_RUN"), self.dry_run)
-        self.execution_profile = os.getenv("EXECUTION_PROFILE", self.execution_profile).strip().lower()
-        self.provider_request_timeout_seconds = parse_int("PROVIDER_REQUEST_TIMEOUT_SECONDS", os.getenv("PROVIDER_REQUEST_TIMEOUT_SECONDS"), self.provider_request_timeout_seconds, min_value=1)
-        self.provider_max_retries = parse_int("PROVIDER_MAX_RETRIES", os.getenv("PROVIDER_MAX_RETRIES"), self.provider_max_retries, min_value=0, max_value=10)
-        self.provider_retry_backoff_ms = parse_int("PROVIDER_RETRY_BACKOFF_MS", os.getenv("PROVIDER_RETRY_BACKOFF_MS"), self.provider_retry_backoff_ms, min_value=0)
-        self.provider_health_cooldown_seconds = parse_int("PROVIDER_HEALTH_COOLDOWN_SECONDS", os.getenv("PROVIDER_HEALTH_COOLDOWN_SECONDS"), self.provider_health_cooldown_seconds, min_value=0)
+        self.env = get_env("ENV", self.env).strip().lower()
+        self.log_level = get_env("LOG_LEVEL", self.log_level).strip().upper()
+        self.safe_mode = parse_bool(get_env("SAFE_MODE"), self.safe_mode)
+        self.dev_mode = parse_bool(get_env("DEV_MODE"), self.dev_mode)
+        self.trusted_mode = parse_bool(get_env("TRUSTED_MODE"), self.trusted_mode)
+        self.memory_enabled = parse_bool(get_env("MEMORY_ENABLED"), self.memory_enabled)
+        self.memory_db_path = get_env("MEMORY_DB_PATH", self.memory_db_path)
+        self.memory_retention_days = parse_int("MEMORY_RETENTION_DAYS", get_env("MEMORY_RETENTION_DAYS"), self.memory_retention_days, min_value=1)
+        self.memory_retention_min_runs = parse_int("MEMORY_RETENTION_MIN_RUNS", get_env("MEMORY_RETENTION_MIN_RUNS"), self.memory_retention_min_runs, min_value=0)
+        self.memory_cleanup_vacuum = parse_bool(get_env("MEMORY_CLEANUP_VACUUM"), self.memory_cleanup_vacuum)
+        self.api_host = get_env("API_HOST", self.api_host)
+        self.api_port = parse_int("API_PORT", get_env("API_PORT"), self.api_port, min_value=1, max_value=65535)
+        self.telegram_token = get_env("TELEGRAM_TOKEN", self.telegram_token)
+        self.telegram_chat_id = get_env("TELEGRAM_CHAT_ID", self.telegram_chat_id)
+        self.openai_api_key = get_env("OPENAI_API_KEY", self.openai_api_key)
+        self.openrouter_api_key = get_env("OPENROUTER_API_KEY", self.openrouter_api_key)
+        self.anthropic_api_key = get_env("ANTHROPIC_API_KEY", self.anthropic_api_key)
+        self.gemini_api_key = get_env("GEMINI_API_KEY", self.gemini_api_key)
+        self.ollama_url = get_env("OLLAMA_URL", self.ollama_url)
+        self.allowed_users = parse_list(get_env("ALLOWED_USERS"))
+        self.default_model = get_env("DEFAULT_MODEL", self.default_model).strip()
+        self.lightweight_mode = parse_bool(get_env("LIGHTWEIGHT_MODE"), self.lightweight_mode)
+        self.workspace_root = get_env("WORKSPACE_ROOT", self.workspace_root)
+        self.allowed_hosts = parse_list(get_env("ALLOWED_HOSTS")) or self.allowed_hosts
+        self.command_timeout = parse_int("COMMAND_TIMEOUT", get_env("COMMAND_TIMEOUT"), self.command_timeout, min_value=1)
+        self.max_file_size = parse_int("MAX_FILE_SIZE", get_env("MAX_FILE_SIZE"), self.max_file_size, min_value=1)
+        self.max_http_response_bytes = parse_int("MAX_HTTP_RESPONSE_BYTES", get_env("MAX_HTTP_RESPONSE_BYTES"), self.max_http_response_bytes, min_value=1)
+        self.shell_enabled = parse_bool(get_env("SHELL_ENABLED"), self.shell_enabled)
+        self.git_enabled = parse_bool(get_env("GIT_ENABLED"), self.git_enabled)
+        self.dry_run = parse_bool(get_env("DRY_RUN"), self.dry_run)
+        self.execution_profile = get_env("EXECUTION_PROFILE", self.execution_profile).strip().lower()
+        self.provider_request_timeout_seconds = parse_int("PROVIDER_REQUEST_TIMEOUT_SECONDS", get_env("PROVIDER_REQUEST_TIMEOUT_SECONDS"), self.provider_request_timeout_seconds, min_value=1)
+        self.provider_max_retries = parse_int("PROVIDER_MAX_RETRIES", get_env("PROVIDER_MAX_RETRIES"), self.provider_max_retries, min_value=0, max_value=10)
+        self.provider_retry_backoff_ms = parse_int("PROVIDER_RETRY_BACKOFF_MS", get_env("PROVIDER_RETRY_BACKOFF_MS"), self.provider_retry_backoff_ms, min_value=0)
+        self.provider_health_cooldown_seconds = parse_int("PROVIDER_HEALTH_COOLDOWN_SECONDS", get_env("PROVIDER_HEALTH_COOLDOWN_SECONDS"), self.provider_health_cooldown_seconds, min_value=0)
         self.validate()
 
     def validate(self) -> None:
