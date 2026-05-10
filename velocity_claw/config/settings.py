@@ -58,6 +58,7 @@ class Settings:
     memory_cleanup_vacuum: bool = True
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    api_key: Optional[str] = None
     telegram_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     openai_api_key: Optional[str] = None
@@ -73,8 +74,8 @@ class Settings:
     command_timeout: int = 120
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     max_http_response_bytes: int = 5 * 1024 * 1024  # 5MB
-    shell_enabled: bool = True
-    git_enabled: bool = True
+    shell_enabled: bool = False
+    git_enabled: bool = False
     dry_run: bool = False
     execution_profile: str = "safe"
     provider_request_timeout_seconds: int = 60
@@ -95,6 +96,7 @@ class Settings:
         self.memory_cleanup_vacuum = parse_bool(os.getenv("MEMORY_CLEANUP_VACUUM"), self.memory_cleanup_vacuum)
         self.api_host = os.getenv("API_HOST", self.api_host)
         self.api_port = parse_int("API_PORT", os.getenv("API_PORT"), self.api_port, min_value=1, max_value=65535)
+        self.api_key = os.getenv("API_KEY", self.api_key)
         self.telegram_token = os.getenv("TELEGRAM_TOKEN", self.telegram_token)
         self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", self.telegram_chat_id)
         self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
