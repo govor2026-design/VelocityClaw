@@ -73,8 +73,8 @@ class Settings:
     command_timeout: int = 120
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     max_http_response_bytes: int = 5 * 1024 * 1024  # 5MB
-    shell_enabled: bool = True
-    git_enabled: bool = True
+    shell_enabled: bool = False
+    git_enabled: bool = False
     dry_run: bool = False
     execution_profile: str = "safe"
     provider_request_timeout_seconds: int = 60
