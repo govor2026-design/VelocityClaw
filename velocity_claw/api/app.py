@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from velocity_claw.api.auth import install_api_key_auth
 from velocity_claw.api.dashboard_v2 import render_dashboard_v2
 from velocity_claw.api.errors import install_api_error_handlers
+from velocity_claw.api.ops_console import build_operations_console
 from velocity_claw.api.server import create_app as create_base_app
 
 
@@ -27,10 +28,6 @@ def install_dashboard_v2(app: FastAPI) -> None:
         provider_health = app.state.agent.router.get_provider_health()
         last_failed = app.state.agent.resume_last_failed_run()
         metrics = app.state.metrics.snapshot()
-        console = app.routes[1].endpoint.__globals__.get("build_operations_console") if False else None
-
-        from velocity_claw.api.ops_console import build_operations_console
-
         console_snapshot = build_operations_console(
             release_state=release_state,
             queue_jobs=queue_jobs,
