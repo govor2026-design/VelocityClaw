@@ -43,7 +43,8 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        expected_key = getattr(request.app.state.settings, "api_key", None)
+        settings = getattr(request.app.state, "settings", None)
+        expected_key = getattr(settings, "api_key", None)
         if not expected_key or request.url.path in PUBLIC_PATHS:
             return await call_next(request)
         supplied_key = request.headers.get(API_KEY_HEADER)
