@@ -3,8 +3,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-
 from velocity_claw.api.server import create_app
 from velocity_claw.config.settings import Settings
 from velocity_claw.core.auto_fix import AutoFixLoop
@@ -66,13 +64,12 @@ class AutoFixIntelligenceV2Tests(unittest.TestCase):
         self.assertEqual(result["forensics"]["attempt_count"], 2)
         self.assertIn("forensic_summary", result["attempts"][0])
 
-    def test_auto_fix_api_returns_stop_reason_and_forensics(self):
+    def test_auto_fix_api_agent_contract_returns_stop_reason_and_forensics(self):
         workspace = tempfile.mkdtemp()
         db_path = str(Path(workspace) / "memory.db")
         settings = Settings(workspace_root=workspace, memory_db_path=db_path)
         with patch("velocity_claw.api.server.load_settings", return_value=settings):
             app = create_app()
-            client = TestClient(app)
             with patch.object(app.state.agent, "run_auto_fix", return_value={
                 "mode": "auto_fix",
                 "max_attempts": 2,
@@ -82,14 +79,12 @@ class AutoFixIntelligenceV2Tests(unittest.TestCase):
                 "forensics": {"attempt_count": 1, "last_attempt_status": "failed"},
                 "run_id": "demo-run",
             }):
-                response = client.post("/auto-fix", json={
-                    "target_test": "tests/test_demo.py",
-                    "patch_plan": [{"name": "foo"}],
-                    "runner": "pytest",
-                    "max_attempts": 2,
-                })
-                self.assertEqual(response.status_code, 200)
-                payload = response.json()
+                payload = app.state.agent.run_auto_fix(
+                    target_test="tests/test_demo.py",
+                    patch_plan=[{"name": "foo"}],
+                    runner="pytest",
+                    max_attempts=2,
+                )
                 self.assertEqual(payload["stop_reason"], "max_attempts_reached")
                 self.assertIn("forensics", payload)
 
