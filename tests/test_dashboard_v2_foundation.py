@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from velocity_claw.api.app import install_dashboard_v2
-from velocity_claw.api.dashboard_v2 import render_dashboard_v2
+from velocity_claw.api.dashboard_v2 import approval_links, render_dashboard_v2, run_links
 
 
 class FakeSettings:
@@ -120,20 +120,37 @@ def make_fake_app():
     return app
 
 
-def test_render_dashboard_v2_contains_core_sections_and_escapes_values():
+def test_run_links_include_v2_and_classic_destinations():
+    html = run_links("run-1")
+
+    assert "/runs/run-1/detail/v2" in html
+    assert "/runs/run-1/artifacts/v2" in html
+    assert "/runs/run-1/forensics" in html
+    assert "/runs/run-1/report" in html
+    assert "/runs/run-1/view" in html
+
+
+def test_approval_links_include_review_and_run_detail():
+    html = approval_links("run-2", 3)
+
+    assert "/approvals/v2/run-2/3" in html
+    assert "/runs/run-2/detail/v2" in html
+
+
+def test_render_dashboard_v2_contains_core_sections_links_and_escapes_values():
     html = render_dashboard_v2(
         execution_profile="safe<script>",
         safe_mode=True,
         trusted_mode=False,
         release_state={"readiness": "ready", "score": 1, "total_checks": 1},
-        console={"queue": {"running": 0, "failed": 0}, "approvals": {"pending": 0}},
+        console={"queue": {"running": 0, "failed": 0}, "approvals": {"pending": 1}},
         recent_runs=[{"run_id": "run-1", "task": "Fix <bug>", "status": "completed", "created_at": "now"}],
-        approvals=[],
+        approvals=[{"run_id": "run-2", "step_id": 3, "title": "Apply patch", "reason": "review"}],
         queue_jobs=[],
         metrics={"tasks_total": 1},
         provider_observability={"summary": {"failed_routes": 0}},
         provider_health={},
-        last_failed=None,
+        last_failed={"run_id": "run-failed", "task": "Repair tests", "status": "failed"},
     )
 
     assert "Velocity Claw Dashboard v2" in html
@@ -142,6 +159,10 @@ def test_render_dashboard_v2_contains_core_sections_and_escapes_values():
     assert "Provider health" in html
     assert "safe&lt;script&gt;" in html
     assert "Fix &lt;bug&gt;" in html
+    assert "/runs/run-1/detail/v2" in html
+    assert "/runs/run-1/artifacts/v2" in html
+    assert "/approvals/v2/run-2/3" in html
+    assert "/runs/run-failed/detail/v2" in html
 
 
 def test_dashboard_v2_endpoint_renders_operational_snapshot():
@@ -155,3 +176,5 @@ def test_dashboard_v2_endpoint_renders_operational_snapshot():
     assert "Apply patch" in response.text
     assert "Repair tests" in response.text
     assert "openai" in response.text
+    assert "/runs/run-1/detail/v2" in response.text
+    assert "/approvals/v2/run-2/3" in response.text
