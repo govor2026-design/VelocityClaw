@@ -51,7 +51,7 @@ It is designed for self-hosted development automation where auditability and own
 ### Operations layer
 
 - FastAPI server
-- HTML dashboard foundation
+- Dashboard v2 and classic dashboard
 - operations console snapshot
 - queue foundation
 - metrics and diagnostics
@@ -145,6 +145,10 @@ VELOCITY_CLAW_API_KEY="change-this-long-random-key"
 
 If no API key is configured, protected routes return `503 api_key_not_configured` instead of running open.
 
+Full API guide:
+
+- `docs/API.md`
+
 ---
 
 ## API highlights
@@ -157,18 +161,23 @@ Start the server with `python cli.py --server`, then use:
 | `GET /metrics` | runtime metrics |
 | `GET /diagnostics` | diagnostics snapshot |
 | `GET /ops/console` | operations console data |
-| `GET /dashboard` | dashboard HTML |
+| `GET /dashboard` | classic dashboard HTML |
+| `GET /dashboard/v2` | Dashboard v2 HTML |
 | `POST /task` | run a task |
 | `POST /modes/run` | run a high-level mode |
 | `POST /queue/submit` | enqueue a task |
 | `GET /runs` | list recent runs |
-| `GET /runs/{run_id}` | inspect a run |
+| `GET /runs/{run_id}` | inspect raw run payload |
+| `GET /runs/{run_id}/detail/v2` | compact run detail and links |
+| `GET /runs/{run_id}/artifacts/v2` | structured artifact index |
 | `GET /runs/{run_id}/forensics` | inspect run forensics |
 | `GET /runs/{run_id}/report` | inspect run report |
 | `GET /runs/{run_id}/retry-context` | inspect retry context |
 | `POST /runs/{run_id}/retry` | retry a previous run |
 | `GET /approvals` | list pending approvals |
-| `POST /approvals/explain` | explain approval requirement |
+| `GET /approvals/v2/{run_id}/{step_id}` | inspect approval before deciding |
+| `POST /approvals/v2/{run_id}/{step_id}/approve` | guarded Approval v2 approve |
+| `POST /approvals/v2/{run_id}/{step_id}/reject` | guarded Approval v2 reject |
 | `GET /release/readiness` | release readiness |
 | `GET /providers/observability` | provider/router observability |
 | `GET /git/summary` | safe repo summary |
@@ -211,6 +220,10 @@ Main guide:
 
 - `docs/DEPLOYMENT.md`
 
+API guide:
+
+- `docs/API.md`
+
 Release guide:
 
 - `docs/RELEASE.md`
@@ -241,7 +254,7 @@ Both files are tested for consistency.
 
 ```text
 velocity_claw/
-  api/            FastAPI server, auth, retry routes, dashboard helpers
+  api/            FastAPI server, auth, v2 endpoints, dashboard helpers
   config/         settings and env loading
   core/           agent, queue, modes, metrics, auto_fix, release
   executor/       tool dispatch
@@ -260,6 +273,7 @@ deploy/
   systemd/        hardened systemd deployment
 
 docs/
+  API.md          API endpoint guide
   DEPLOYMENT.md   unified deployment guide
   RELEASE.md      release checklist and versioning guide
 ```
