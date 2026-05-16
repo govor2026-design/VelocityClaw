@@ -11,6 +11,7 @@ def test_api_doc_lists_v2_operator_endpoints():
 
     required = [
         "/dashboard/v2",
+        "/diagnostics/v2",
         "/runs/{run_id}/detail/v2",
         "/runs/{run_id}/artifacts/v2",
         "/approvals/v2/{run_id}/{step_id}",
