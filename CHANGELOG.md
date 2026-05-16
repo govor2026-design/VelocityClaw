@@ -2,6 +2,31 @@
 
 All notable changes to Velocity Claw are tracked here.
 
+## 0.2.2 - 2026-05-16
+
+### Added
+
+- Added Dashboard v2 operator surface.
+- Added Approval workflow v2 detail and guarded decision endpoints.
+- Added Execution profiles v2 tool-access explanations.
+- Added Run detail v2 and Artifact index v2 endpoints.
+- Added Diagnostics v2 endpoint with runtime summary, risk flags, queue state, approval state, provider state, release readiness, metrics, and troubleshooting links.
+- Added API guide for current v2 endpoints.
+- Added deployed API smoke-check script.
+
+### Changed
+
+- Dashboard v2 now links to Run detail v2, Artifact index v2, Approval v2, forensics, reports, classic run views, and Diagnostics v2.
+- Dashboard v2 now surfaces compact risk flags and a Diagnostics section.
+- API smoke checks now include Diagnostics v2.
+- API smoke auth check now expects `401` for protected routes without an API key when the server is configured with an API key.
+- README and deployment docs now point operators to the API guide.
+
+### Fixed
+
+- Fixed API smoke-test expectation for configured authenticated deployments.
+- Added tests to lock smoke-check endpoints and auth-status expectations.
+
 ## 0.2.1 - 2026-05-11
 
 ### Security
