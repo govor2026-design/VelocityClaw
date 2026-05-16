@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from velocity_claw.api.approval_v2 import approve_with_guard, build_approval_detail, reject_with_guard
 from velocity_claw.api.auth import install_api_key_auth
 from velocity_claw.api.dashboard_v2 import render_dashboard_v2
+from velocity_claw.api.diagnostics_v2 import build_diagnostics_v2
 from velocity_claw.api.errors import install_api_error_handlers
 from velocity_claw.api.ops_console import build_operations_console
 from velocity_claw.api.run_detail_v2 import build_artifact_index, build_run_detail_v2
@@ -49,6 +50,30 @@ def install_run_detail_v2(app: FastAPI) -> None:
         if not run:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         return {"status": "ok", "run_id": run_id, "artifacts": build_artifact_index(run)}
+
+
+def install_diagnostics_v2(app: FastAPI) -> None:
+    @app.get("/diagnostics/v2")
+    def diagnostics_v2():
+        release_state = app.state.release.evaluate()
+        queue_jobs = app.state.queue.list_jobs()
+        approvals = app.state.agent.list_pending_approvals()
+        provider_observability = app.state.agent.router.get_router_observability()
+        provider_health = app.state.agent.router.get_provider_health()
+        last_failed = app.state.agent.resume_last_failed_run()
+        metrics = app.state.metrics.snapshot()
+        return build_diagnostics_v2(
+            settings=app.state.settings,
+            release_state=release_state,
+            queue_jobs=queue_jobs,
+            approvals=approvals,
+            provider_observability=provider_observability,
+            provider_health=provider_health,
+            last_failed=last_failed,
+            metrics=metrics,
+            active_workers=app.state.queue.active_count(),
+            max_concurrency=app.state.queue.max_concurrency,
+        )
 
 
 def install_dashboard_v2(app: FastAPI) -> None:
@@ -102,11 +127,13 @@ def create_app() -> FastAPI:
     install_api_error_handlers(app)
     install_approval_v2(app)
     install_run_detail_v2(app)
+    install_diagnostics_v2(app)
     install_dashboard_v2(app)
     install_api_key_auth(app)
     app.state.api_error_handlers_installed = True
     app.state.approval_v2_installed = True
     app.state.run_detail_v2_installed = True
+    app.state.diagnostics_v2_installed = True
     app.state.dashboard_v2_installed = True
     app.state.api_key_auth_installed = True
     return app
