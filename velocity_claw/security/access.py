@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from typing import Optional
 
 from velocity_claw.config.settings import Settings
+from velocity_claw.security.profile_explain import explain_tool_access as build_tool_access_explanation
 
 
 class AccessControl:
@@ -110,12 +111,7 @@ class ExecutionProfileManager:
     def explain_tool_access(self, tool: str, profile_name: Optional[str] = None) -> dict:
         profile = self.get_profile(profile_name)
         allowed = self.is_tool_allowed(tool, profile.name)
-        return {
-            "profile": profile.name,
-            "tool": tool,
-            "allowed": allowed,
-            "description": profile.description,
-        }
+        return build_tool_access_explanation(profile, tool, allowed)
 
 
 class ApprovalManager:
