@@ -8,6 +8,7 @@ from velocity_claw.api.auth import install_api_key_auth
 from velocity_claw.api.dashboard_v2 import render_dashboard_v2
 from velocity_claw.api.errors import install_api_error_handlers
 from velocity_claw.api.ops_console import build_operations_console
+from velocity_claw.api.run_detail_v2 import build_artifact_index, build_run_detail_v2
 from velocity_claw.api.server import ApprovalDecisionRequest, create_app as create_base_app
 
 
@@ -32,6 +33,22 @@ def install_approval_v2(app: FastAPI) -> None:
         if result.get("status") == "blocked":
             raise HTTPException(status_code=409, detail={"status": "failed", "error": result["reason"], "detail": result})
         return result
+
+
+def install_run_detail_v2(app: FastAPI) -> None:
+    @app.get("/runs/{run_id}/detail/v2")
+    def run_detail_v2(run_id: str):
+        run = app.state.agent.memory.load_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        return {"status": "ok", "run": build_run_detail_v2(run)}
+
+    @app.get("/runs/{run_id}/artifacts/v2")
+    def run_artifacts_v2(run_id: str):
+        run = app.state.agent.memory.load_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        return {"status": "ok", "run_id": run_id, "artifacts": build_artifact_index(run)}
 
 
 def install_dashboard_v2(app: FastAPI) -> None:
@@ -84,10 +101,12 @@ def create_app() -> FastAPI:
     app = create_base_app()
     install_api_error_handlers(app)
     install_approval_v2(app)
+    install_run_detail_v2(app)
     install_dashboard_v2(app)
     install_api_key_auth(app)
     app.state.api_error_handlers_installed = True
     app.state.approval_v2_installed = True
+    app.state.run_detail_v2_installed = True
     app.state.dashboard_v2_installed = True
     app.state.api_key_auth_installed = True
     return app
