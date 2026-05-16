@@ -44,6 +44,10 @@ Authorization: Bearer <key>
 
 If no API key is configured, protected routes fail closed instead of running open.
 
+Full endpoint reference:
+
+- `docs/API.md`
+
 ## Manual systemd deployment
 
 Use manual systemd deployment when you want to copy and adjust unit files yourself.
@@ -106,6 +110,10 @@ For a healthy deployment, verify:
 - the API service starts successfully
 - `/health` responds through the configured API port
 - protected API routes require `X-API-Key` or Bearer authentication
+- `/dashboard/v2` loads with authentication
+- `/runs` returns recent runs with authentication
+- `/approvals` returns pending approvals with authentication
+- `docs/API.md` matches the deployed API surface
 - logs are being written or available through the process manager
 - the memory database path is writable by the service user
 - the workspace directory exists and is writable by the service user
