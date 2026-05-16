@@ -70,7 +70,7 @@ def request_html(base_url: str, path: str, api_key: str | None = None, expected_
 def run_smoke_checks(base_url: str, api_key: str) -> list[CheckResult]:
     checks = [
         request_json(base_url, "/health", expected_status=200),
-        request_json(base_url, "/status", expected_status=503),
+        request_json(base_url, "/status", expected_status=401),
         request_json(base_url, "/status", api_key=api_key, expected_status=200),
         request_json(base_url, "/metrics", api_key=api_key, expected_status=200),
         request_json(base_url, "/diagnostics/v2", api_key=api_key, expected_status=200),
