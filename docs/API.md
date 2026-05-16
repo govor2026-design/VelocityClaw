@@ -19,6 +19,16 @@ VELOCITY_CLAW_API_KEY=change-this-long-random-key
 API_KEY=change-this-long-random-key
 ```
 
+## Smoke test after deployment
+
+After starting a deployed API service, run:
+
+```bash
+VELOCITY_CLAW_API_KEY=<key> python scripts/smoke_api.py --base-url http://127.0.0.1:8000
+```
+
+The smoke script checks public health, protected-route auth behavior, authenticated status/metrics/runs/approvals/profile endpoints, release readiness, and Dashboard v2.
+
 ## Health and runtime status
 
 | Method | Endpoint | Purpose |
