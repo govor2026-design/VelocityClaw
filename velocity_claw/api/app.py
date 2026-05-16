@@ -1,13 +1,37 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
+from velocity_claw.api.approval_v2 import approve_with_guard, build_approval_detail, reject_with_guard
 from velocity_claw.api.auth import install_api_key_auth
 from velocity_claw.api.dashboard_v2 import render_dashboard_v2
 from velocity_claw.api.errors import install_api_error_handlers
 from velocity_claw.api.ops_console import build_operations_console
-from velocity_claw.api.server import create_app as create_base_app
+from velocity_claw.api.server import ApprovalDecisionRequest, create_app as create_base_app
+
+
+def install_approval_v2(app: FastAPI) -> None:
+    @app.get("/approvals/v2/{run_id}/{step_id}")
+    def approval_detail_v2(run_id: str, step_id: int):
+        detail = build_approval_detail(app.state.agent.memory.load_run(run_id), step_id)
+        if detail["status"] == "not_found":
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": detail["reason"], "detail": detail})
+        return {"status": "ok", "approval": detail}
+
+    @app.post("/approvals/v2/{run_id}/{step_id}/approve")
+    async def approve_v2(run_id: str, step_id: int, payload: ApprovalDecisionRequest):
+        result = await approve_with_guard(app.state.agent, run_id, step_id, actor=payload.actor, reason=payload.reason)
+        if result.get("status") == "blocked":
+            raise HTTPException(status_code=409, detail={"status": "failed", "error": result["reason"], "detail": result})
+        return result
+
+    @app.post("/approvals/v2/{run_id}/{step_id}/reject")
+    def reject_v2(run_id: str, step_id: int, payload: ApprovalDecisionRequest):
+        result = reject_with_guard(app.state.agent, run_id, step_id, actor=payload.actor, reason=payload.reason)
+        if result.get("status") == "blocked":
+            raise HTTPException(status_code=409, detail={"status": "failed", "error": result["reason"], "detail": result})
+        return result
 
 
 def install_dashboard_v2(app: FastAPI) -> None:
@@ -59,9 +83,11 @@ def create_app() -> FastAPI:
     """Create the production API app with shared hardening installed."""
     app = create_base_app()
     install_api_error_handlers(app)
+    install_approval_v2(app)
     install_dashboard_v2(app)
     install_api_key_auth(app)
     app.state.api_error_handlers_installed = True
+    app.state.approval_v2_installed = True
     app.state.dashboard_v2_installed = True
     app.state.api_key_auth_installed = True
     return app
