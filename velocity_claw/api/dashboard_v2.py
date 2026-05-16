@@ -37,6 +37,36 @@ def approval_links(run_id: Any, step_id: Any) -> str:
     )
 
 
+def dashboard_risk_flags(*, trusted_mode: bool, release_state: dict[str, Any], queue_summary: dict[str, Any], approvals: list[dict[str, Any]], provider_summary: dict[str, Any], last_failed: dict[str, Any] | None) -> list[dict[str, str]]:
+    flags: list[dict[str, str]] = []
+    if trusted_mode:
+        flags.append({"level": "high", "code": "trusted_mode", "message": "Trusted mode is enabled."})
+    if release_state.get("readiness") not in {"ready", "ok"}:
+        flags.append({"level": "medium", "code": "release_readiness", "message": "Release readiness is not green."})
+    if queue_summary.get("failed", 0) > 0:
+        flags.append({"level": "medium", "code": "queue_failed", "message": "Queue has failed jobs."})
+    if approvals:
+        flags.append({"level": "info", "code": "pending_approvals", "message": "Pending approvals require review."})
+    if provider_summary.get("failed_routes", 0) > 0:
+        flags.append({"level": "medium", "code": "provider_routes", "message": "Provider routing has failed routes."})
+    if last_failed:
+        flags.append({"level": "info", "code": "last_failed_run", "message": "A failed run is available for inspection."})
+    return flags
+
+
+def render_risk_flags(flags: list[dict[str, str]]) -> str:
+    if not flags:
+        return "<p>No active risk flags. <a href='/diagnostics/v2'>Open Diagnostics v2</a></p>"
+    items = "".join(
+        "<li>"
+        f"{status_badge(flag.get('level', 'info'))} "
+        f"<code>{html_escape(flag.get('code'))}</code> — {html_escape(flag.get('message'))}"
+        "</li>"
+        for flag in flags
+    )
+    return f"<ul>{items}</ul><p><a href='/diagnostics/v2'>Open Diagnostics v2</a></p>"
+
+
 def render_dashboard_v2(
     *,
     execution_profile: str,
@@ -56,6 +86,14 @@ def render_dashboard_v2(
     provider_summary = provider_observability.get("summary", {}) if isinstance(provider_observability, dict) else {}
     queue_summary = console.get("queue", {}) if isinstance(console, dict) else {}
     approval_summary = console.get("approvals", {}) if isinstance(console, dict) else {}
+    risk_flags = dashboard_risk_flags(
+        trusted_mode=trusted_mode,
+        release_state=release_state,
+        queue_summary=queue_summary,
+        approvals=approvals,
+        provider_summary=provider_summary,
+        last_failed=last_failed,
+    )
 
     run_rows = []
     for run in recent_runs:
@@ -145,10 +183,13 @@ def render_dashboard_v2(
     code {{ background:#020617; border:1px solid var(--line); border-radius:8px; padding:2px 6px; }}
     .badge {{ display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font-size:12px; }}
     .badge-completed, .badge-ok, .badge-ready {{ border-color:#22c55e; color:#86efac; }}
-    .badge-failed, .badge-error {{ border-color:#ef4444; color:#fca5a5; }}
-    .badge-running, .badge-pending, .badge-cooldown {{ border-color:#f59e0b; color:#fcd34d; }}
+    .badge-failed, .badge-error, .badge-high {{ border-color:#ef4444; color:#fca5a5; }}
+    .badge-running, .badge-pending, .badge-cooldown, .badge-medium {{ border-color:#f59e0b; color:#fcd34d; }}
+    .badge-info {{ border-color:#38bdf8; color:#7dd3fc; }}
     .nav {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }}
     .nav a {{ background:#020617; border:1px solid var(--line); border-radius:999px; padding:8px 10px; }}
+    ul {{ margin:0; padding-left:20px; }}
+    li {{ margin:7px 0; }}
   </style>
 </head>
 <body>
@@ -159,6 +200,7 @@ def render_dashboard_v2(
       <p class='muted'>Operational overview for runs, approvals, queue, providers, and release readiness.</p>
       <div class='nav'>
         <a href='/dashboard'>classic dashboard</a>
+        <a href='/diagnostics/v2'>diagnostics v2</a>
         <a href='/ops/console'>ops console</a>
         <a href='/runs'>runs json</a>
         <a href='/approvals'>approvals json</a>
@@ -179,8 +221,14 @@ def render_dashboard_v2(
     {number_card('Queue running', queue_summary.get('running', 0))}
     {number_card('Queue failed', queue_summary.get('failed', 0))}
     {number_card('Approvals pending', approval_summary.get('pending', len(approvals)))}
+    {number_card('Risk flags', len(risk_flags))}
     {number_card('Provider failed routes', provider_summary.get('failed_routes', 0))}
   </div>
+
+  <section class='card section'>
+    <h2>Diagnostics</h2>
+    {render_risk_flags(risk_flags)}
+  </section>
 
   <section class='card section'>
     <h2>Last failed run</h2>
