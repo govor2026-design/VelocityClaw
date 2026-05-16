@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from velocity_claw.api.app import install_dashboard_v2
-from velocity_claw.api.dashboard_v2 import approval_links, render_dashboard_v2, run_links
+from velocity_claw.api.dashboard_v2 import approval_links, dashboard_risk_flags, render_dashboard_v2, run_links
 
 
 class FakeSettings:
@@ -58,7 +58,7 @@ class FakeRouter:
             "summary": {
                 "route_count": 3,
                 "fallback_successes": 1,
-                "failed_routes": 0,
+                "failed_routes": 1,
             },
             "recent_route_history": [],
         }
@@ -101,11 +101,11 @@ class FakeAgent:
 class FakeRelease:
     def evaluate(self):
         return {
-            "readiness": "ready",
-            "score": 5,
+            "readiness": "warning",
+            "score": 4,
             "total_checks": 5,
             "blocking_issues": [],
-            "warnings": [],
+            "warnings": ["provider route fallback"],
         }
 
 
@@ -137,7 +137,26 @@ def test_approval_links_include_review_and_run_detail():
     assert "/runs/run-2/detail/v2" in html
 
 
-def test_render_dashboard_v2_contains_core_sections_links_and_escapes_values():
+def test_dashboard_risk_flags_detect_runtime_risks():
+    flags = dashboard_risk_flags(
+        trusted_mode=True,
+        release_state={"readiness": "warning"},
+        queue_summary={"failed": 2},
+        approvals=[{"run_id": "run-1"}],
+        provider_summary={"failed_routes": 1},
+        last_failed={"run_id": "run-failed"},
+    )
+
+    codes = {flag["code"] for flag in flags}
+    assert "trusted_mode" in codes
+    assert "release_readiness" in codes
+    assert "queue_failed" in codes
+    assert "pending_approvals" in codes
+    assert "provider_routes" in codes
+    assert "last_failed_run" in codes
+
+
+def test_render_dashboard_v2_contains_core_sections_diagnostics_links_and_escapes_values():
     html = render_dashboard_v2(
         execution_profile="safe<script>",
         safe_mode=True,
@@ -157,6 +176,9 @@ def test_render_dashboard_v2_contains_core_sections_links_and_escapes_values():
     assert "Recent runs" in html
     assert "Pending approvals" in html
     assert "Provider health" in html
+    assert "Diagnostics" in html
+    assert "Risk flags" in html
+    assert "/diagnostics/v2" in html
     assert "safe&lt;script&gt;" in html
     assert "Fix &lt;bug&gt;" in html
     assert "/runs/run-1/detail/v2" in html
@@ -178,3 +200,5 @@ def test_dashboard_v2_endpoint_renders_operational_snapshot():
     assert "openai" in response.text
     assert "/runs/run-1/detail/v2" in response.text
     assert "/approvals/v2/run-2/3" in response.text
+    assert "/diagnostics/v2" in response.text
+    assert "Risk flags" in response.text
