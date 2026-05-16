@@ -27,7 +27,7 @@ After starting a deployed API service, run:
 VELOCITY_CLAW_API_KEY=<key> python scripts/smoke_api.py --base-url http://127.0.0.1:8000
 ```
 
-The smoke script checks public health, protected-route auth behavior, authenticated status/metrics/runs/approvals/profile endpoints, release readiness, and Dashboard v2.
+The smoke script checks public health, protected-route auth behavior, authenticated status/metrics/diagnostics/runs/approvals/profile endpoints, release readiness, and Dashboard v2.
 
 ## Health and runtime status
 
@@ -36,7 +36,8 @@ The smoke script checks public health, protected-route auth behavior, authentica
 | GET | `/health` | Public service health and metrics snapshot |
 | GET | `/status` | Agent runtime status |
 | GET | `/metrics` | Metrics counters |
-| GET | `/diagnostics` | Diagnostics snapshot |
+| GET | `/diagnostics` | Classic diagnostics snapshot |
+| GET | `/diagnostics/v2` | Diagnostics v2 runtime summary with risk flags |
 | GET | `/ops/console` | Compact operations console snapshot |
 | GET | `/dashboard` | Classic HTML dashboard |
 | GET | `/dashboard/v2` | Dashboard v2 HTML overview |
@@ -46,6 +47,7 @@ Example:
 ```bash
 curl http://127.0.0.1:8000/health
 curl -H "X-API-Key: $VELOCITY_CLAW_API_KEY" http://127.0.0.1:8000/dashboard/v2
+curl -H "X-API-Key: $VELOCITY_CLAW_API_KEY" http://127.0.0.1:8000/diagnostics/v2
 ```
 
 ## Task execution
@@ -194,10 +196,11 @@ Recommended operator flow:
 
 1. Open `/dashboard/v2`.
 2. Review recent runs and pending approvals.
-3. Open `/runs/{run_id}/detail/v2` for compact run context.
-4. Open `/runs/{run_id}/artifacts/v2` for artifact grouping and previews.
-5. Open `/approvals/v2/{run_id}/{step_id}` before approving or rejecting.
-6. Use the guarded Approval v2 decision endpoints.
+3. Open `/diagnostics/v2` when troubleshooting runtime state.
+4. Open `/runs/{run_id}/detail/v2` for compact run context.
+5. Open `/runs/{run_id}/artifacts/v2` for artifact grouping and previews.
+6. Open `/approvals/v2/{run_id}/{step_id}` before approving or rejecting.
+7. Use the guarded Approval v2 decision endpoints.
 
 ## Error behavior
 
