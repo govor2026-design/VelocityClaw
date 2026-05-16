@@ -17,6 +17,26 @@ def number_card(label: str, value: Any) -> str:
     return f"<section class='card metric'><div class='label'>{html_escape(label)}</div><div class='value'>{html_escape(value)}</div></section>"
 
 
+def run_links(run_id: Any) -> str:
+    safe_run_id = html_escape(run_id)
+    return (
+        f"<a href='/runs/{safe_run_id}/detail/v2'>detail v2</a> · "
+        f"<a href='/runs/{safe_run_id}/artifacts/v2'>artifacts</a> · "
+        f"<a href='/runs/{safe_run_id}/forensics'>forensics</a> · "
+        f"<a href='/runs/{safe_run_id}/report'>report</a> · "
+        f"<a href='/runs/{safe_run_id}/view'>classic</a>"
+    )
+
+
+def approval_links(run_id: Any, step_id: Any) -> str:
+    safe_run_id = html_escape(run_id)
+    safe_step_id = html_escape(step_id)
+    return (
+        f"<a href='/approvals/v2/{safe_run_id}/{safe_step_id}'>review</a> · "
+        f"<a href='/runs/{safe_run_id}/detail/v2'>run detail</a>"
+    )
+
+
 def render_dashboard_v2(
     *,
     execution_profile: str,
@@ -46,18 +66,21 @@ def render_dashboard_v2(
             f"<td>{html_escape(run.get('task'))}</td>"
             f"<td>{status_badge(str(run.get('status') or 'unknown'))}</td>"
             f"<td>{html_escape(run.get('created_at'))}</td>"
-            f"<td><a href='/runs/{html_escape(run_id)}/view'>open</a></td>"
+            f"<td>{run_links(run_id)}</td>"
             "</tr>"
         )
 
     approval_rows = []
     for item in approvals:
+        run_id = item.get("run_id")
+        step_id = item.get("step_id")
         approval_rows.append(
             "<tr>"
-            f"<td><code>{html_escape(item.get('run_id'))}</code></td>"
-            f"<td>{html_escape(item.get('step_id'))}</td>"
+            f"<td><code>{html_escape(run_id)}</code></td>"
+            f"<td>{html_escape(step_id)}</td>"
             f"<td>{html_escape(item.get('title') or item.get('step_title') or '')}</td>"
             f"<td>{html_escape(item.get('reason') or item.get('approval_reason') or '')}</td>"
+            f"<td>{approval_links(run_id, step_id)}</td>"
             "</tr>"
         )
 
@@ -92,7 +115,7 @@ def render_dashboard_v2(
         last_failed_block = (
             f"<p><code>{html_escape(run_id)}</code> — {html_escape(last_failed.get('task'))} "
             f"{status_badge(str(last_failed.get('status') or 'failed'))} "
-            f"<a href='/runs/{html_escape(run_id)}/view'>open</a></p>"
+            f"{run_links(run_id)}</p>"
         )
 
     return f"""
@@ -166,15 +189,15 @@ def render_dashboard_v2(
 
   <section class='card section'>
     <h2>Recent runs</h2>
-    <table><thead><tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>View</th></tr></thead><tbody>
+    <table><thead><tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>Links</th></tr></thead><tbody>
       {''.join(run_rows) or "<tr><td colspan='5'>No runs recorded.</td></tr>"}
     </tbody></table>
   </section>
 
   <section class='card section'>
     <h2>Pending approvals</h2>
-    <table><thead><tr><th>Run ID</th><th>Step</th><th>Title</th><th>Reason</th></tr></thead><tbody>
-      {''.join(approval_rows) or "<tr><td colspan='4'>No pending approvals.</td></tr>"}
+    <table><thead><tr><th>Run ID</th><th>Step</th><th>Title</th><th>Reason</th><th>Links</th></tr></thead><tbody>
+      {''.join(approval_rows) or "<tr><td colspan='5'>No pending approvals.</td></tr>"}
     </tbody></table>
   </section>
 
