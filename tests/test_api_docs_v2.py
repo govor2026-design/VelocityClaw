@@ -10,6 +10,7 @@ def test_api_doc_lists_v2_operator_endpoints():
     content = API_DOC.read_text(encoding="utf-8")
 
     required = [
+        "/version",
         "/dashboard/v2",
         "/diagnostics/v2",
         "/runs/{run_id}/detail/v2",
