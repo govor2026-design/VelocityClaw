@@ -3,6 +3,8 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
+from velocity_claw.__version__ import __release_stage__, __version__
+
 
 def html_escape(value: Any) -> str:
     return escape(str(value if value is not None else ""), quote=True)
@@ -199,6 +201,7 @@ def render_dashboard_v2(
       <h1>Velocity Claw Dashboard v2</h1>
       <p class='muted'>Operational overview for runs, approvals, queue, providers, and release readiness.</p>
       <div class='nav'>
+        <a href='/version'>version</a>
         <a href='/dashboard'>classic dashboard</a>
         <a href='/diagnostics/v2'>diagnostics v2</a>
         <a href='/ops/console'>ops console</a>
@@ -209,6 +212,7 @@ def render_dashboard_v2(
       </div>
     </div>
     <section class='card'>
+      <div>Version: <b>{html_escape(__version__)}</b> <span class='muted'>({html_escape(__release_stage__)})</span></div>
       <div>Profile: <b>{html_escape(execution_profile)}</b></div>
       <div>Safe mode: <b>{html_escape(safe_mode)}</b></div>
       <div>Trusted mode: <b>{html_escape(trusted_mode)}</b></div>
@@ -216,6 +220,7 @@ def render_dashboard_v2(
   </header>
 
   <div class='grid'>
+    {number_card('Version', __version__)}
     {number_card('Release readiness', release_state.get('readiness', 'unknown'))}
     {number_card('Release score', release_score)}
     {number_card('Queue running', queue_summary.get('running', 0))}
