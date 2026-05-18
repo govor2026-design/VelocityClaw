@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from velocity_claw.__version__ import __release_stage__, __version__
 from velocity_claw.api.app import install_dashboard_v2
 from velocity_claw.api.dashboard_v2 import approval_links, dashboard_risk_flags, render_dashboard_v2, run_links
 
@@ -156,7 +157,7 @@ def test_dashboard_risk_flags_detect_runtime_risks():
     assert "last_failed_run" in codes
 
 
-def test_render_dashboard_v2_contains_core_sections_diagnostics_links_and_escapes_values():
+def test_render_dashboard_v2_contains_core_sections_version_diagnostics_links_and_escapes_values():
     html = render_dashboard_v2(
         execution_profile="safe<script>",
         safe_mode=True,
@@ -178,6 +179,10 @@ def test_render_dashboard_v2_contains_core_sections_diagnostics_links_and_escape
     assert "Provider health" in html
     assert "Diagnostics" in html
     assert "Risk flags" in html
+    assert "Version" in html
+    assert __version__ in html
+    assert __release_stage__ in html
+    assert "/version" in html
     assert "/diagnostics/v2" in html
     assert "safe&lt;script&gt;" in html
     assert "Fix &lt;bug&gt;" in html
@@ -201,4 +206,6 @@ def test_dashboard_v2_endpoint_renders_operational_snapshot():
     assert "/runs/run-1/detail/v2" in response.text
     assert "/approvals/v2/run-2/3" in response.text
     assert "/diagnostics/v2" in response.text
+    assert "/version" in response.text
+    assert __version__ in response.text
     assert "Risk flags" in response.text
