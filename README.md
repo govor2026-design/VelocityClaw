@@ -52,6 +52,7 @@ It is designed for self-hosted development automation where auditability and own
 
 - FastAPI server
 - Dashboard v2 and classic dashboard
+- `/version` endpoint for deployed version verification
 - operations console snapshot
 - queue foundation
 - metrics and diagnostics
@@ -87,9 +88,10 @@ Run the API:
 API_KEY="change-this-long-random-key" python cli.py --server
 ```
 
-Call a protected API endpoint:
+Call protected API endpoints:
 
 ```bash
+curl -H "X-API-Key: change-this-long-random-key" http://127.0.0.1:8000/version
 curl -H "X-API-Key: change-this-long-random-key" http://127.0.0.1:8000/status
 ```
 
@@ -158,8 +160,10 @@ Start the server with `python cli.py --server`, then use:
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /health` | public service health |
+| `GET /version` | deployed version and runtime mode |
 | `GET /metrics` | runtime metrics |
 | `GET /diagnostics` | diagnostics snapshot |
+| `GET /diagnostics/v2` | diagnostics v2 runtime summary and risk flags |
 | `GET /ops/console` | operations console data |
 | `GET /dashboard` | classic dashboard HTML |
 | `GET /dashboard/v2` | Dashboard v2 HTML |
@@ -245,8 +249,9 @@ Current version:
 
 - `VERSION`
 - `velocity_claw/__version__.py`
+- `GET /version`
 
-Both files are tested for consistency.
+All version metadata is tested for consistency where applicable. Use `/version` after deployment to verify the running service.
 
 ---
 

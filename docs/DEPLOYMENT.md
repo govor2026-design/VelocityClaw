@@ -110,9 +110,12 @@ For a healthy deployment, verify:
 - the API service starts successfully
 - `/health` responds through the configured API port
 - protected API routes require `X-API-Key` or Bearer authentication
-- `/dashboard/v2` loads with authentication
+- `/version` returns the expected deployed version and runtime profile
+- `/dashboard/v2` loads with authentication and shows the expected version
+- `/diagnostics/v2` returns runtime summary and risk flags with authentication
 - `/runs` returns recent runs with authentication
 - `/approvals` returns pending approvals with authentication
+- `scripts/smoke_api.py` passes against the deployed service
 - `docs/API.md` matches the deployed API surface
 - logs are being written or available through the process manager
 - the memory database path is writable by the service user
