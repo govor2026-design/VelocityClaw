@@ -27,13 +27,14 @@ After starting a deployed API service, run:
 VELOCITY_CLAW_API_KEY=<key> python scripts/smoke_api.py --base-url http://127.0.0.1:8000
 ```
 
-The smoke script checks public health, protected-route auth behavior, authenticated status/metrics/diagnostics/runs/approvals/profile endpoints, release readiness, and Dashboard v2.
+The smoke script checks public health, protected-route auth behavior, authenticated version/status/metrics/diagnostics/runs/approvals/profile endpoints, release readiness, and Dashboard v2.
 
 ## Health and runtime status
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/health` | Public service health and metrics snapshot |
+| GET | `/version` | Product version, release stage, and runtime mode |
 | GET | `/status` | Agent runtime status |
 | GET | `/metrics` | Metrics counters |
 | GET | `/diagnostics` | Classic diagnostics snapshot |
@@ -46,6 +47,7 @@ Example:
 
 ```bash
 curl http://127.0.0.1:8000/health
+curl -H "X-API-Key: $VELOCITY_CLAW_API_KEY" http://127.0.0.1:8000/version
 curl -H "X-API-Key: $VELOCITY_CLAW_API_KEY" http://127.0.0.1:8000/dashboard/v2
 curl -H "X-API-Key: $VELOCITY_CLAW_API_KEY" http://127.0.0.1:8000/diagnostics/v2
 ```
@@ -194,13 +196,14 @@ The profile explanation includes:
 
 Recommended operator flow:
 
-1. Open `/dashboard/v2`.
-2. Review recent runs and pending approvals.
-3. Open `/diagnostics/v2` when troubleshooting runtime state.
-4. Open `/runs/{run_id}/detail/v2` for compact run context.
-5. Open `/runs/{run_id}/artifacts/v2` for artifact grouping and previews.
-6. Open `/approvals/v2/{run_id}/{step_id}` before approving or rejecting.
-7. Use the guarded Approval v2 decision endpoints.
+1. Open `/version` to verify the deployed version.
+2. Open `/dashboard/v2`.
+3. Review recent runs and pending approvals.
+4. Open `/diagnostics/v2` when troubleshooting runtime state.
+5. Open `/runs/{run_id}/detail/v2` for compact run context.
+6. Open `/runs/{run_id}/artifacts/v2` for artifact grouping and previews.
+7. Open `/approvals/v2/{run_id}/{step_id}` before approving or rejecting.
+8. Use the guarded Approval v2 decision endpoints.
 
 ## Error behavior
 
