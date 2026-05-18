@@ -11,6 +11,13 @@ from velocity_claw.api.errors import install_api_error_handlers
 from velocity_claw.api.ops_console import build_operations_console
 from velocity_claw.api.run_detail_v2 import build_artifact_index, build_run_detail_v2
 from velocity_claw.api.server import ApprovalDecisionRequest, create_app as create_base_app
+from velocity_claw.api.version import build_version_payload
+
+
+def install_version_endpoint(app: FastAPI) -> None:
+    @app.get("/version")
+    def version():
+        return build_version_payload(app.state.settings)
 
 
 def install_approval_v2(app: FastAPI) -> None:
@@ -125,12 +132,14 @@ def create_app() -> FastAPI:
     """Create the production API app with shared hardening installed."""
     app = create_base_app()
     install_api_error_handlers(app)
+    install_version_endpoint(app)
     install_approval_v2(app)
     install_run_detail_v2(app)
     install_diagnostics_v2(app)
     install_dashboard_v2(app)
     install_api_key_auth(app)
     app.state.api_error_handlers_installed = True
+    app.state.version_endpoint_installed = True
     app.state.approval_v2_installed = True
     app.state.run_detail_v2_installed = True
     app.state.diagnostics_v2_installed = True
