@@ -4,6 +4,7 @@ from pathlib import Path
 API_DOC = Path("docs/API.md")
 README = Path("README.md")
 DEPLOYMENT = Path("docs/DEPLOYMENT.md")
+CHANGELOG = Path("CHANGELOG.md")
 
 
 def test_api_doc_lists_v2_operator_endpoints():
@@ -37,3 +38,9 @@ def test_api_doc_documents_auth_headers_and_error_behavior():
 def test_primary_docs_link_to_api_guide():
     assert "docs/API.md" in README.read_text(encoding="utf-8")
     assert "docs/API.md" in DEPLOYMENT.read_text(encoding="utf-8")
+
+
+def test_primary_docs_document_version_endpoint():
+    assert "/version" in README.read_text(encoding="utf-8")
+    assert "/version" in DEPLOYMENT.read_text(encoding="utf-8")
+    assert "/version" in CHANGELOG.read_text(encoding="utf-8")
