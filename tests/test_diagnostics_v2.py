@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from velocity_claw.__version__ import __product_name__, __release_stage__, __version__
 from velocity_claw.api.app import install_diagnostics_v2
 from velocity_claw.api.diagnostics_v2 import build_diagnostics_v2
 
@@ -92,7 +93,7 @@ def make_app():
     return app
 
 
-def test_build_diagnostics_v2_summarizes_runtime_state_and_flags():
+def test_build_diagnostics_v2_summarizes_runtime_state_flags_and_version():
     result = build_diagnostics_v2(
         settings=RiskySettings(),
         release_state=FakeRelease().evaluate(),
@@ -107,12 +108,16 @@ def test_build_diagnostics_v2_summarizes_runtime_state_and_flags():
     )
 
     assert result["status"] == "ok"
+    assert result["version"]["product"] == __product_name__
+    assert result["version"]["version"] == __version__
+    assert result["version"]["release_stage"] == __release_stage__
     assert result["summary"]["queue_total"] == 3
     assert result["summary"]["queue_failed"] == 1
     assert result["summary"]["approvals_pending"] == 1
     assert result["summary"]["provider_failures"] == 2
     assert result["summary"]["provider_cooldowns"] == 1
     assert result["runtime"]["execution_profile"] == "safe"
+    assert result["links"]["version"] == "/version"
     codes = {flag["code"] for flag in result["risk_flags"]}
     assert "trusted_mode_enabled" in codes
     assert "shell_enabled" in codes
@@ -132,6 +137,7 @@ def test_diagnostics_v2_endpoint_returns_operational_snapshot():
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
+    assert payload["version"]["version"] == __version__
     assert payload["summary"]["release_readiness"] == "warning"
     assert payload["queue"]["running"] == 1
     assert payload["queue"]["failed"] == 1
@@ -139,3 +145,4 @@ def test_diagnostics_v2_endpoint_returns_operational_snapshot():
     assert payload["providers"]["summary"]["in_cooldown"] == 1
     assert payload["last_failed_run"]["run_id"] == "run-failed"
     assert payload["links"]["dashboard_v2"] == "/dashboard/v2"
+    assert payload["links"]["version"] == "/version"

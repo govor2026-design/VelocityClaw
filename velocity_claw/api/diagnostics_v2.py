@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from velocity_claw.__version__ import __product_name__, __release_stage__, __version__
+
 
 def _queue_summary(queue_jobs: list[dict[str, Any]], active_workers: int, max_concurrency: int) -> dict[str, Any]:
     return {
@@ -63,6 +65,11 @@ def build_diagnostics_v2(*, settings: Any, release_state: dict[str, Any], queue_
     )
     return {
         "status": "ok",
+        "version": {
+            "product": __product_name__,
+            "version": __version__,
+            "release_stage": __release_stage__,
+        },
         "summary": {
             "release_readiness": release_state.get("readiness"),
             "release_score": release_state.get("score"),
@@ -105,6 +112,7 @@ def build_diagnostics_v2(*, settings: Any, release_state: dict[str, Any], queue_
         "metrics": metrics,
         "risk_flags": flags,
         "links": {
+            "version": "/version",
             "dashboard_v2": "/dashboard/v2",
             "ops_console": "/ops/console",
             "runs": "/runs",
