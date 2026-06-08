@@ -38,10 +38,24 @@ The smoke script checks public health, protected-route auth behavior, authentica
 | GET | `/status` | Agent runtime status |
 | GET | `/metrics` | Metrics counters |
 | GET | `/diagnostics` | Classic diagnostics snapshot |
-| GET | `/diagnostics/v2` | Diagnostics v2 runtime summary with risk flags |
+| GET | `/diagnostics/v2` | Diagnostics v2 runtime summary with version metadata and risk flags |
 | GET | `/ops/console` | Compact operations console snapshot |
 | GET | `/dashboard` | Classic HTML dashboard |
 | GET | `/dashboard/v2` | Dashboard v2 HTML overview |
+
+Diagnostics v2 includes:
+
+- product, version, and release stage
+- runtime environment and execution profile
+- safe/trusted/shell/git flags
+- release readiness
+- queue summary
+- pending approvals
+- provider health summary
+- last failed run
+- metrics snapshot
+- risk flags
+- troubleshooting links
 
 Example:
 
