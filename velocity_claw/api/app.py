@@ -26,6 +26,13 @@ def install_version_endpoint(app: FastAPI) -> None:
 
 
 def install_queue_persistence_v2(app: FastAPI) -> None:
+    settings = getattr(app.state, "settings", None)
+    if settings is not None and hasattr(app.state.queue, "configure_runtime"):
+        app.state.queue.configure_runtime(
+            max_attempts=getattr(settings, "queue_max_attempts", 3),
+            recover_on_startup=getattr(settings, "queue_recover_on_startup", True),
+        )
+
     async def startup_queue_recovery() -> None:
         scheduled = app.state.queue.schedule_pending(app.state.agent.run_task)
         app.state.queue_startup_schedule = {
@@ -155,6 +162,7 @@ def install_diagnostics_v2(app: FastAPI) -> None:
         provider_health = app.state.agent.router.get_provider_health()
         last_failed = app.state.agent.resume_last_failed_run()
         metrics = app.state.metrics.snapshot()
+        queue_runtime = app.state.queue.runtime_summary() if hasattr(app.state.queue, "runtime_summary") else None
         return build_diagnostics_v2(
             settings=app.state.settings,
             release_state=release_state,
@@ -166,7 +174,7 @@ def install_diagnostics_v2(app: FastAPI) -> None:
             metrics=metrics,
             active_workers=app.state.queue.active_count(),
             max_concurrency=app.state.queue.max_concurrency,
-            queue_runtime=app.state.queue.runtime_summary(),
+            queue_runtime=queue_runtime,
         )
 
 
