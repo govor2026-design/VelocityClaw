@@ -43,7 +43,30 @@ class VelocityClawAgent:
         merged.setdefault("project_root", self.settings.workspace_root)
         remembered_keys = self.project_context.ingest_context(merged)
         planning_context = self.memory.build_planning_context()
-        planning_context["project_memory_v2"] = self.project_context.build(task, limit=5)
+        project_memory_v2 = self.project_context.build(task, limit=5)
+        planning_context["project_memory_v2"] = project_memory_v2
+
+        structured_facts = {
+            f"knowledge.{entry['key']}": entry.get("value")
+            for entry in project_memory_v2.get("reusable_knowledge", [])
+            if entry.get("key")
+        }
+        planning_context["project_facts"] = {
+            **(planning_context.get("project_facts") or {}),
+            **structured_facts,
+        }
+        reusable_notes = project_memory_v2.get("reusable_notes") or []
+        if reusable_notes:
+            planning_context["recent_notes"] = reusable_notes
+        related_runs = project_memory_v2.get("related_runs") or []
+        if related_runs:
+            planning_context["recent_run_tasks"] = [item.get("task") for item in related_runs if item.get("task")]
+            planning_context["recent_failed_tasks"] = [
+                item.get("task")
+                for item in related_runs
+                if item.get("task") and item.get("status") == "failed"
+            ]
+        planning_context["memory_signals_v2"] = project_memory_v2.get("planning_signals") or {}
         if remembered_keys:
             planning_context["knowledge_ingested"] = remembered_keys
 
