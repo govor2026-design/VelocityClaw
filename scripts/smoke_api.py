@@ -8,7 +8,6 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass
@@ -68,13 +67,14 @@ def request_html(base_url: str, path: str, api_key: str | None = None, expected_
 
 
 def run_smoke_checks(base_url: str, api_key: str) -> list[CheckResult]:
-    checks = [
+    return [
         request_json(base_url, "/health", expected_status=200),
         request_json(base_url, "/status", expected_status=401),
         request_json(base_url, "/version", api_key=api_key, expected_status=200),
         request_json(base_url, "/status", api_key=api_key, expected_status=200),
         request_json(base_url, "/metrics", api_key=api_key, expected_status=200),
         request_json(base_url, "/diagnostics/v2", api_key=api_key, expected_status=200),
+        request_json(base_url, "/queue/v2/runtime", api_key=api_key, expected_status=200),
         request_json(base_url, "/runs", api_key=api_key, expected_status=200),
         request_json(base_url, "/approvals", api_key=api_key, expected_status=200),
         request_json(base_url, "/approvals/v2", api_key=api_key, expected_status=200),
@@ -83,7 +83,6 @@ def run_smoke_checks(base_url: str, api_key: str) -> list[CheckResult]:
         request_json(base_url, "/release/readiness", api_key=api_key, expected_status=200),
         request_html(base_url, "/dashboard/v2", api_key=api_key, expected_status=200),
     ]
-    return checks
 
 
 def print_results(results: list[CheckResult]) -> None:

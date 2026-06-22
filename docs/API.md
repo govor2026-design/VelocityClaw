@@ -27,7 +27,7 @@ After starting a deployed API service, run:
 VELOCITY_CLAW_API_KEY=<key> python scripts/smoke_api.py --base-url http://127.0.0.1:8000
 ```
 
-The smoke script checks public health, protected-route auth behavior, authenticated version/status/metrics/diagnostics/runs/approvals/profile endpoints, release readiness, and Dashboard v2.
+The smoke script checks public health, protected-route auth behavior, authenticated version/status/metrics/diagnostics, Queue v2 runtime, runs, approvals, profiles, release readiness, and Dashboard v2.
 
 ## Health and runtime status
 
@@ -49,7 +49,7 @@ Diagnostics v2 includes:
 - runtime environment and execution profile
 - safe/trusted/shell/git flags
 - release readiness
-- queue summary
+- queue counts, active/scheduled workers, persistence, retry limits, and startup recovery
 - pending approvals
 - provider health summary
 - last failed run
@@ -89,10 +89,28 @@ curl -X POST http://127.0.0.1:8000/task \
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | POST | `/queue/submit` | Submit a queued task |
-| GET | `/queue` | List queued jobs |
+| GET | `/queue` | Legacy queue list |
 | GET | `/queue/{job_id}` | Get one queued job |
-| POST | `/queue/{job_id}/cancel` | Cancel a queued job |
-| POST | `/queue/{job_id}/requeue` | Requeue a job |
+| POST | `/queue/{job_id}/cancel` | Legacy cancel endpoint |
+| POST | `/queue/{job_id}/requeue` | Legacy requeue endpoint |
+| GET | `/queue/v2/runtime` | Queue counts, workers, limits, persistence, and startup recovery |
+| POST | `/queue/v2/recover` | Schedule all queued jobs without duplicate worker tasks |
+| POST | `/queue/v2/{job_id}/requeue` | Requeue and immediately schedule a failed or cancelled job |
+| POST | `/queue/v2/{job_id}/cancel` | Cancel a queued or running job with runtime summary |
+
+Queue persistence v2 restores jobs from SQLite at process startup. A stale persisted `running` job is converted to `queued`, recovery metadata is written, and the job is scheduled again through the current worker pool.
+
+Repeated recovery calls do not schedule the same job twice. A cancelled running job remains `cancelled` even if its underlying runner finishes later.
+
+When retry attempts are exhausted, Queue v2 returns `409 max_attempts_exhausted`. An explicit operator retry can use:
+
+```text
+POST /queue/v2/<job_id>/requeue?force=true
+```
+
+Detailed queue guide:
+
+- `docs/QUEUE.md`
 
 ## Runs and artifacts
 
@@ -168,6 +186,10 @@ Approval v2 detail returns:
 
 Approval v2 blocks duplicate decisions. If a step is already approved or rejected, the v2 decision endpoints return `409`.
 
+Detailed approval guide:
+
+- `docs/APPROVALS.md`
+
 Example:
 
 ```bash
@@ -228,12 +250,13 @@ Recommended operator flow:
 
 1. Open `/version` to verify the deployed version.
 2. Open `/dashboard/v2`.
-3. Review `/approvals/v2` for risk-prioritized pending approvals.
-4. Open `/diagnostics/v2` when troubleshooting runtime state.
-5. Open `/runs/{run_id}/detail/v2` for compact run context.
-6. Open `/runs/{run_id}/artifacts/v2` for artifact grouping and previews.
-7. Open `/approvals/v2/{run_id}/{step_id}` before approving or rejecting.
-8. Use the guarded Approval v2 decision endpoints.
+3. Open `/queue/v2/runtime` to verify persistence, recovery, and worker state.
+4. Review `/approvals/v2` for risk-prioritized pending approvals.
+5. Open `/diagnostics/v2` when troubleshooting runtime state.
+6. Open `/runs/{run_id}/detail/v2` for compact run context.
+7. Open `/runs/{run_id}/artifacts/v2` for artifact grouping and previews.
+8. Open `/approvals/v2/{run_id}/{step_id}` before approving or rejecting.
+9. Use the guarded Approval v2 decision endpoints.
 
 ## Error behavior
 
@@ -242,6 +265,6 @@ Common response patterns:
 | Status | Meaning |
 | --- | --- |
 | 401 | Missing or wrong API key |
-| 404 | Requested run/job/approval was not found |
-| 409 | Approval decision blocked because the step is no longer pending |
+| 404 | Requested run, queue job, or approval was not found |
+| 409 | Decision or queue lifecycle transition was blocked |
 | 503 | API key is not configured on protected routes |

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
@@ -23,6 +25,105 @@ def install_version_endpoint(app: FastAPI) -> None:
     @app.get("/version")
     def version():
         return build_version_payload(app.state.settings)
+
+
+def _prepare_forced_retry(queue, job) -> None:
+    if job.attempts < queue.max_attempts:
+        return
+    previous_attempts = job.attempts
+    job.attempts = 0
+    job.updated_at = datetime.now().isoformat()
+    job.history.append(
+        {
+            "status": "queued",
+            "reason": "forced_retry_cycle_reset",
+            "at": job.updated_at,
+            "attempts": 0,
+            "previous_attempts": previous_attempts,
+        }
+    )
+    queue._persist_job(job)
+
+
+def install_queue_persistence_v2(app: FastAPI) -> None:
+    settings = getattr(app.state, "settings", None)
+    if settings is not None and hasattr(app.state.queue, "configure_runtime"):
+        app.state.queue.configure_runtime(
+            max_attempts=getattr(settings, "queue_max_attempts", 3),
+            recover_on_startup=getattr(settings, "queue_recover_on_startup", True),
+        )
+
+    async def startup_queue_recovery() -> None:
+        scheduled = app.state.queue.schedule_pending(app.state.agent.run_task)
+        app.state.queue_startup_schedule = {
+            "scheduled_job_ids": scheduled,
+            "scheduled_count": len(scheduled),
+            "runtime": app.state.queue.runtime_summary(),
+        }
+        if scheduled:
+            app.state.logger.info("Recovered and scheduled %s persisted queue jobs", len(scheduled))
+
+    app.router.add_event_handler("startup", startup_queue_recovery)
+
+    @app.get("/queue/v2/runtime")
+    def queue_runtime_v2():
+        return {
+            "status": "ok",
+            "queue": app.state.queue.runtime_summary(),
+            "jobs": app.state.queue.list_jobs()[:20],
+        }
+
+    @app.post("/queue/v2/recover")
+    async def queue_recover_v2():
+        scheduled = app.state.queue.schedule_pending(app.state.agent.run_task)
+        return {
+            "status": "ok",
+            "scheduled_job_ids": scheduled,
+            "scheduled_count": len(scheduled),
+            "queue": app.state.queue.runtime_summary(),
+        }
+
+    @app.post("/queue/v2/{job_id}/requeue")
+    async def queue_requeue_v2(job_id: str, force: bool = False):
+        existing = app.state.queue.get(job_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        if existing.status == "completed":
+            raise HTTPException(
+                status_code=409,
+                detail={"status": "failed", "error": "job_not_requeueable", "detail": "Completed jobs cannot be requeued"},
+            )
+
+        job = app.state.queue.requeue(job_id, force=force)
+        if job.status == "failed" and job.terminal_reason == "max_attempts_exhausted" and not force:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "status": "failed",
+                    "error": "max_attempts_exhausted",
+                    "detail": {"job_id": job_id, "attempts": job.attempts, "max_attempts": app.state.queue.max_attempts},
+                },
+            )
+        if force and job.status == "queued":
+            _prepare_forced_retry(app.state.queue, job)
+        scheduled = app.state.queue.schedule(job_id, app.state.agent.run_task) if job.status == "queued" else False
+        return {
+            "status": "ok",
+            "job": job.__dict__,
+            "scheduled": scheduled,
+            "queue": app.state.queue.runtime_summary(),
+        }
+
+    @app.post("/queue/v2/{job_id}/cancel")
+    def queue_cancel_v2(job_id: str):
+        job = app.state.queue.cancel(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        return {
+            "status": "ok",
+            "job": job.__dict__,
+            "queue": app.state.queue.runtime_summary(),
+        }
 
 
 def install_approval_v2(app: FastAPI) -> None:
@@ -83,6 +184,7 @@ def install_diagnostics_v2(app: FastAPI) -> None:
         provider_health = app.state.agent.router.get_provider_health()
         last_failed = app.state.agent.resume_last_failed_run()
         metrics = app.state.metrics.snapshot()
+        queue_runtime = app.state.queue.runtime_summary() if hasattr(app.state.queue, "runtime_summary") else None
         return build_diagnostics_v2(
             settings=app.state.settings,
             release_state=release_state,
@@ -94,6 +196,7 @@ def install_diagnostics_v2(app: FastAPI) -> None:
             metrics=metrics,
             active_workers=app.state.queue.active_count(),
             max_concurrency=app.state.queue.max_concurrency,
+            queue_runtime=queue_runtime,
         )
 
 
@@ -147,6 +250,7 @@ def create_app() -> FastAPI:
     app = create_base_app()
     install_api_error_handlers(app)
     install_version_endpoint(app)
+    install_queue_persistence_v2(app)
     install_approval_v2(app)
     install_run_detail_v2(app)
     install_diagnostics_v2(app)
@@ -154,6 +258,7 @@ def create_app() -> FastAPI:
     install_api_key_auth(app)
     app.state.api_error_handlers_installed = True
     app.state.version_endpoint_installed = True
+    app.state.queue_persistence_v2_installed = True
     app.state.approval_v2_installed = True
     app.state.run_detail_v2_installed = True
     app.state.diagnostics_v2_installed = True

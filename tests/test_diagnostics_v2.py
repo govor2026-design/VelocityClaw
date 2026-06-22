@@ -46,6 +46,24 @@ class FakeQueue:
     def active_count(self):
         return 1
 
+    def runtime_summary(self):
+        return {
+            "counts": {"running": 1, "failed": 1, "queued": 1},
+            "active_workers": 1,
+            "scheduled_workers": 1,
+            "max_concurrency": 2,
+            "max_attempts": 3,
+            "persistence_enabled": True,
+            "recover_on_startup": True,
+            "startup_recovery": {
+                "enabled": True,
+                "recovered_running": 1,
+                "queued_available": 1,
+                "invalid_failed": 0,
+                "at": "2026-06-22T00:00:00Z",
+            },
+        }
+
 
 class FakeRouter:
     def get_router_observability(self):
@@ -74,14 +92,6 @@ class FakeMetrics:
         return {"tasks_total": 2, "tasks_failed": 1, "queue_failed": 1}
 
 
-class FakeAppState:
-    settings = FakeSettings()
-    release = FakeRelease()
-    queue = FakeQueue()
-    agent = FakeAgent()
-    metrics = FakeMetrics()
-
-
 def make_app():
     app = FastAPI()
     app.state.settings = FakeSettings()
@@ -93,11 +103,12 @@ def make_app():
     return app
 
 
-def test_build_diagnostics_v2_summarizes_runtime_state_flags_and_version():
+def test_build_diagnostics_v2_summarizes_runtime_state_flags_version_and_queue_recovery():
+    queue = FakeQueue()
     result = build_diagnostics_v2(
         settings=RiskySettings(),
         release_state=FakeRelease().evaluate(),
-        queue_jobs=FakeQueue().list_jobs(),
+        queue_jobs=queue.list_jobs(),
         approvals=FakeAgent().list_pending_approvals(),
         provider_observability=FakeRouter().get_router_observability(),
         provider_health=FakeRouter().get_provider_health(),
@@ -105,6 +116,7 @@ def test_build_diagnostics_v2_summarizes_runtime_state_flags_and_version():
         metrics=FakeMetrics().snapshot(),
         active_workers=1,
         max_concurrency=2,
+        queue_runtime=queue.runtime_summary(),
     )
 
     assert result["status"] == "ok"
@@ -112,18 +124,25 @@ def test_build_diagnostics_v2_summarizes_runtime_state_flags_and_version():
     assert result["version"]["version"] == __version__
     assert result["version"]["release_stage"] == __release_stage__
     assert result["summary"]["queue_total"] == 3
+    assert result["summary"]["queue_queued"] == 1
     assert result["summary"]["queue_failed"] == 1
+    assert result["summary"]["queue_scheduled"] == 1
+    assert result["summary"]["queue_recovered_running"] == 1
     assert result["summary"]["approvals_pending"] == 1
     assert result["summary"]["provider_failures"] == 2
     assert result["summary"]["provider_cooldowns"] == 1
     assert result["runtime"]["execution_profile"] == "safe"
+    assert result["queue"]["persistence_enabled"] is True
+    assert result["queue"]["max_attempts"] == 3
     assert result["links"]["version"] == "/version"
+    assert result["links"]["queue_runtime_v2"] == "/queue/v2/runtime"
     codes = {flag["code"] for flag in result["risk_flags"]}
     assert "trusted_mode_enabled" in codes
     assert "shell_enabled" in codes
     assert "git_enabled" in codes
     assert "release_not_ready" in codes
     assert "queue_failures" in codes
+    assert "queue_restart_recovery" in codes
     assert "pending_approvals" in codes
     assert "provider_cooldown" in codes
     assert "last_failed_run" in codes
@@ -141,8 +160,11 @@ def test_diagnostics_v2_endpoint_returns_operational_snapshot():
     assert payload["summary"]["release_readiness"] == "warning"
     assert payload["queue"]["running"] == 1
     assert payload["queue"]["failed"] == 1
+    assert payload["queue"]["scheduled_workers"] == 1
+    assert payload["queue"]["startup_recovery"]["recovered_running"] == 1
     assert payload["approvals"]["pending"] == 1
     assert payload["providers"]["summary"]["in_cooldown"] == 1
     assert payload["last_failed_run"]["run_id"] == "run-failed"
     assert payload["links"]["dashboard_v2"] == "/dashboard/v2"
     assert payload["links"]["version"] == "/version"
+    assert payload["links"]["queue_runtime_v2"] == "/queue/v2/runtime"

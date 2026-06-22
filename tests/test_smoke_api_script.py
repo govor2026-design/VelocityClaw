@@ -47,5 +47,6 @@ def test_smoke_api_checks_expected_auth_and_operator_endpoints(monkeypatch):
     assert ("json", "/version", "secret", 200) in calls
     assert ("json", "/status", "secret", 200) in calls
     assert ("json", "/diagnostics/v2", "secret", 200) in calls
+    assert ("json", "/queue/v2/runtime", "secret", 200) in calls
     assert ("json", "/approvals/v2", "secret", 200) in calls
     assert ("html", "/dashboard/v2", "secret", 200) in calls

@@ -5,7 +5,14 @@ from typing import Any
 from velocity_claw.__version__ import __product_name__, __release_stage__, __version__
 
 
-def _queue_summary(queue_jobs: list[dict[str, Any]], active_workers: int, max_concurrency: int) -> dict[str, Any]:
+def _queue_summary(
+    queue_jobs: list[dict[str, Any]],
+    active_workers: int,
+    max_concurrency: int,
+    queue_runtime: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    runtime = queue_runtime or {}
+    startup_recovery = runtime.get("startup_recovery") or {}
     return {
         "total": len(queue_jobs),
         "running": sum(1 for job in queue_jobs if job.get("status") == "running"),
@@ -14,7 +21,12 @@ def _queue_summary(queue_jobs: list[dict[str, Any]], active_workers: int, max_co
         "failed": sum(1 for job in queue_jobs if job.get("status") == "failed"),
         "cancelled": sum(1 for job in queue_jobs if job.get("status") == "cancelled"),
         "active_workers": active_workers,
-        "max_concurrency": max_concurrency,
+        "scheduled_workers": runtime.get("scheduled_workers", 0),
+        "max_concurrency": runtime.get("max_concurrency", max_concurrency),
+        "max_attempts": runtime.get("max_attempts"),
+        "persistence_enabled": runtime.get("persistence_enabled", False),
+        "recover_on_startup": runtime.get("recover_on_startup", False),
+        "startup_recovery": startup_recovery,
     }
 
 
@@ -43,6 +55,11 @@ def _risk_flags(*, settings: Any, release_state: dict[str, Any], queue: dict[str
         flags.append({"level": "medium", "code": "release_not_ready", "message": "Release readiness is not green."})
     if queue.get("failed", 0) > 0:
         flags.append({"level": "medium", "code": "queue_failures", "message": "Queue has failed jobs."})
+    recovery = queue.get("startup_recovery") or {}
+    if recovery.get("recovered_running", 0) > 0:
+        flags.append({"level": "info", "code": "queue_restart_recovery", "message": "Interrupted queue jobs were recovered after restart."})
+    if recovery.get("invalid_failed", 0) > 0:
+        flags.append({"level": "medium", "code": "queue_invalid_persisted_state", "message": "Invalid persisted queue states were failed during recovery."})
     if approvals:
         flags.append({"level": "info", "code": "pending_approvals", "message": "There are pending approvals."})
     if provider_summary.get("in_cooldown", 0) > 0:
@@ -52,8 +69,21 @@ def _risk_flags(*, settings: Any, release_state: dict[str, Any], queue: dict[str
     return flags
 
 
-def build_diagnostics_v2(*, settings: Any, release_state: dict[str, Any], queue_jobs: list[dict[str, Any]], approvals: list[dict[str, Any]], provider_observability: dict[str, Any], provider_health: dict[str, dict[str, Any]], last_failed: dict[str, Any] | None, metrics: dict[str, Any], active_workers: int, max_concurrency: int) -> dict[str, Any]:
-    queue = _queue_summary(queue_jobs, active_workers, max_concurrency)
+def build_diagnostics_v2(
+    *,
+    settings: Any,
+    release_state: dict[str, Any],
+    queue_jobs: list[dict[str, Any]],
+    approvals: list[dict[str, Any]],
+    provider_observability: dict[str, Any],
+    provider_health: dict[str, dict[str, Any]],
+    last_failed: dict[str, Any] | None,
+    metrics: dict[str, Any],
+    active_workers: int,
+    max_concurrency: int,
+    queue_runtime: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    queue = _queue_summary(queue_jobs, active_workers, max_concurrency, queue_runtime)
     providers = _provider_summary(provider_health)
     flags = _risk_flags(
         settings=settings,
@@ -76,7 +106,10 @@ def build_diagnostics_v2(*, settings: Any, release_state: dict[str, Any], queue_
             "release_total_checks": release_state.get("total_checks"),
             "queue_total": queue["total"],
             "queue_running": queue["running"],
+            "queue_queued": queue["queued"],
             "queue_failed": queue["failed"],
+            "queue_scheduled": queue["scheduled_workers"],
+            "queue_recovered_running": (queue.get("startup_recovery") or {}).get("recovered_running", 0),
             "approvals_pending": len(approvals),
             "provider_failures": providers["failed"],
             "provider_cooldowns": providers["in_cooldown"],
@@ -114,6 +147,8 @@ def build_diagnostics_v2(*, settings: Any, release_state: dict[str, Any], queue_
         "links": {
             "version": "/version",
             "dashboard_v2": "/dashboard/v2",
+            "diagnostics_v2": "/diagnostics/v2",
+            "queue_runtime_v2": "/queue/v2/runtime",
             "ops_console": "/ops/console",
             "runs": "/runs",
             "approvals": "/approvals",
