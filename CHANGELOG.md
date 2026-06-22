@@ -2,6 +2,41 @@
 
 All notable changes to Velocity Claw are tracked here.
 
+## 0.2.3 - 2026-06-22
+
+### Security
+
+- Upgraded `aiohttp` from `3.13.5` to `3.14.1` to resolve the vulnerabilities reported by the dependency-audit workflow, including request/cookie leakage, parser and pipeline memory exhaustion, multipart header injection, TLS/Digest-auth redirect handling, compressed-body resource exhaustion, and WebSocket/resource-limit issues.
+
+### Added
+
+- Added protected `/version` API endpoint with product, package version, release stage, environment, and runtime-mode metadata.
+- Added deployed version and release-stage surfaces to Dashboard v2 and Diagnostics v2.
+- Added Approval v2 operator index with risk-priority sorting, filters, normalized decision context, artifact/history counts, and related operator links.
+- Added Approval continuation flow v3 with explicit resume boundaries, continuation history, source-step deduplication, and guarded replay behavior.
+- Added Queue persistence v2 with SQLite schema migration, startup recovery, queued-job rescheduling, duplicate scheduling protection, retry limits, and recovery metadata.
+- Added Queue v2 runtime, recover, requeue, and cancel operator endpoints.
+- Added Queue v2 operator documentation and deployment smoke coverage.
+- Added CI failure artifacts containing pytest output for easier workflow diagnostics.
+
+### Changed
+
+- Approval v2 decisions now resume approved runs from a precise continuation boundary instead of replaying the approved source step.
+- Dashboard v2, Diagnostics v2, README, deployment documentation, and the API guide now expose the deployed package version flow.
+- Diagnostics v2 now includes queue persistence status, active and scheduled worker counts, retry limits, startup recovery details, and queue recovery risk flags.
+- Production queue settings now apply `QUEUE_MAX_ATTEMPTS` and `QUEUE_RECOVER_ON_STARTUP` before startup scheduling.
+- Forced queue retries now start a new retry cycle while preserving the previous attempt count in lifecycle history.
+
+### Fixed
+
+- Fixed persisted `running` jobs remaining falsely active after an unclean restart.
+- Fixed legacy requeue behavior that changed status without scheduling a worker.
+- Fixed cancelled running jobs being overwritten as completed when the runner returned later.
+- Fixed duplicate scheduling during repeated recovery requests.
+- Fixed exhausted `force=true` retries being immediately blocked again by the attempt cap.
+- Fixed startup event registration compatibility with the pinned FastAPI version.
+- Stabilized background-worker API tests by waiting for terminal state inside the application lifespan.
+
 ## 0.2.2 - 2026-05-16
 
 ### Added
