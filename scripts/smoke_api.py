@@ -77,6 +77,7 @@ def run_smoke_checks(base_url: str, api_key: str) -> list[CheckResult]:
         request_json(base_url, "/diagnostics/v2", api_key=api_key, expected_status=200),
         request_json(base_url, "/runs", api_key=api_key, expected_status=200),
         request_json(base_url, "/approvals", api_key=api_key, expected_status=200),
+        request_json(base_url, "/approvals/v2", api_key=api_key, expected_status=200),
         request_json(base_url, "/profiles/active", api_key=api_key, expected_status=200),
         request_json(base_url, "/profiles/explain/shell__run", api_key=api_key, expected_status=200),
         request_json(base_url, "/release/readiness", api_key=api_key, expected_status=200),

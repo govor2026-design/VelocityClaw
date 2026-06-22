@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
-from velocity_claw.api.approval_v2 import approve_with_guard, build_approval_detail, reject_with_guard
+from velocity_claw.api.approval_v2 import (
+    approve_with_guard,
+    build_approval_detail,
+    build_approval_index,
+    reject_with_guard,
+)
 from velocity_claw.api.auth import install_api_key_auth
 from velocity_claw.api.dashboard_v2 import render_dashboard_v2
 from velocity_claw.api.diagnostics_v2 import build_diagnostics_v2
@@ -21,6 +26,15 @@ def install_version_endpoint(app: FastAPI) -> None:
 
 
 def install_approval_v2(app: FastAPI) -> None:
+    @app.get("/approvals/v2")
+    def approval_index_v2(limit: int = 50, risk: str | None = None, tool: str | None = None):
+        return build_approval_index(
+            app.state.agent,
+            limit=limit,
+            risk=risk,
+            tool=tool,
+        )
+
     @app.get("/approvals/v2/{run_id}/{step_id}")
     def approval_detail_v2(run_id: str, step_id: int):
         detail = build_approval_detail(app.state.agent.memory.load_run(run_id), step_id)

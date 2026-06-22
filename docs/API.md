@@ -134,13 +134,26 @@ curl -H "X-API-Key: $VELOCITY_CLAW_API_KEY" \
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| GET | `/approvals` | List pending approvals |
+| GET | `/approvals` | Legacy pending approvals list |
+| GET | `/approvals/v2` | Approval v2 operator index with summaries and filters |
 | POST | `/approvals/explain` | Explain whether a step requires approval |
 | POST | `/approvals/{run_id}/{step_id}/approve` | Legacy approve endpoint |
 | POST | `/approvals/{run_id}/{step_id}/reject` | Legacy reject endpoint |
 | GET | `/approvals/v2/{run_id}/{step_id}` | Approval v2 detail before decision |
 | POST | `/approvals/v2/{run_id}/{step_id}/approve` | Guarded Approval v2 approve |
 | POST | `/approvals/v2/{run_id}/{step_id}/reject` | Guarded Approval v2 reject |
+
+Approval v2 index supports:
+
+- risk-priority sorting: high, medium, low, unknown
+- `risk` filter, for example `?risk=high`
+- exact `tool` filter, for example `?tool=shell.run`
+- `limit` from 1 to 100
+- counts by risk and tool
+- total, matched, returned, and decidable counts
+- normalized reason, profile, risk, triggers, and operator hints
+- approval history and artifact counts
+- links to decision, run detail, artifacts, Dashboard v2, and Diagnostics v2
 
 Approval v2 detail returns:
 
@@ -151,13 +164,16 @@ Approval v2 detail returns:
 - `can_decide`
 - approval history for that step
 - step artifacts
-- approve/reject links
+- approve/reject and run links
 
 Approval v2 blocks duplicate decisions. If a step is already approved or rejected, the v2 decision endpoints return `409`.
 
 Example:
 
 ```bash
+curl -H "X-API-Key: $VELOCITY_CLAW_API_KEY" \
+  "http://127.0.0.1:8000/approvals/v2?risk=high&limit=20"
+
 curl -H "X-API-Key: $VELOCITY_CLAW_API_KEY" \
   http://127.0.0.1:8000/approvals/v2/<run_id>/<step_id>
 
@@ -212,7 +228,7 @@ Recommended operator flow:
 
 1. Open `/version` to verify the deployed version.
 2. Open `/dashboard/v2`.
-3. Review recent runs and pending approvals.
+3. Review `/approvals/v2` for risk-prioritized pending approvals.
 4. Open `/diagnostics/v2` when troubleshooting runtime state.
 5. Open `/runs/{run_id}/detail/v2` for compact run context.
 6. Open `/runs/{run_id}/artifacts/v2` for artifact grouping and previews.
