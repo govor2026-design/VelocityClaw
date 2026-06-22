@@ -1,3 +1,4 @@
+# Release automation v2 is active on the default branch.
 name: release
 
 on:
@@ -63,16 +64,15 @@ jobs:
 
       - name: Resolve release tag
         id: release
+        env:
+          MANUAL_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           VERSION_VALUE="$(tr -d '[:space:]' < VERSION)"
           EXPECTED_TAG="v${VERSION_VALUE}"
 
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            REQUESTED_TAG="${{ inputs.tag }}"
-            if [[ -z "${REQUESTED_TAG}" ]]; then
-              REQUESTED_TAG="${EXPECTED_TAG}"
-            fi
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${MANUAL_TAG}" ]]; then
+            REQUESTED_TAG="${MANUAL_TAG}"
           else
             REQUESTED_TAG="${EXPECTED_TAG}"
           fi
@@ -126,10 +126,11 @@ jobs:
           python scripts/generate_release_notes.py
 
       - name: Generate release summary
+        env:
+          VERSION_VALUE: ${{ steps.release.outputs.version }}
+          TAG_VALUE: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          VERSION_VALUE="${{ steps.release.outputs.version }}"
-          TAG_VALUE="${{ steps.release.outputs.tag }}"
           {
             echo "# Velocity Claw ${VERSION_VALUE}"
             echo
@@ -146,16 +147,17 @@ jobs:
             echo "- CHANGELOG.md"
             echo "- docs/RELEASE.md"
             echo "- docs/RELEASE_AUTOMATION.md"
+            echo "- docs/RELEASE_BOOTSTRAP.md"
             echo "- docs/DEPLOYMENT.md"
           } > dist/release-summary.md
 
       - name: Publish or update GitHub Release
         env:
           RELEASE_EXISTS: ${{ steps.state.outputs.release_exists }}
+          TAG_VALUE: ${{ steps.release.outputs.tag }}
+          VERSION_VALUE: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
-          TAG_VALUE="${{ steps.release.outputs.tag }}"
-          VERSION_VALUE="${{ steps.release.outputs.version }}"
 
           if [[ "${RELEASE_EXISTS}" == "true" ]]; then
             if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
@@ -181,9 +183,11 @@ jobs:
           fi
 
       - name: Verify published release
+        env:
+          TAG_VALUE: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release view "${{ steps.release.outputs.tag }}" --json tagName,name,isDraft,isPrerelease
+          gh release view "${TAG_VALUE}" --json tagName,name,isDraft,isPrerelease
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
