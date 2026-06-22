@@ -1,5 +1,6 @@
 import asyncio
 import sqlite3
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,13 +10,22 @@ from velocity_claw.api.app import install_queue_persistence_v2
 from velocity_claw.core.queue import RunQueue
 
 
-async def wait_for(predicate, timeout=1.0):
+async def wait_for(predicate, timeout=2.0):
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while loop.time() < deadline:
         if predicate():
             return
         await asyncio.sleep(0.01)
+    raise AssertionError("condition was not reached before timeout")
+
+
+def wait_for_sync(predicate, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
     raise AssertionError("condition was not reached before timeout")
 
 
@@ -181,12 +191,9 @@ def test_queue_v2_runtime_and_recovery_endpoints(tmp_path: Path):
         assert recover.status_code == 200
         assert recover.json()["status"] == "ok"
 
-        async def wait_completed():
-            await wait_for(lambda: app.state.queue.get(job.job_id).status == "completed")
-
-        asyncio.run(wait_completed())
-
-    assert app.state.agent.calls == [("api recovery", None)]
+        wait_for_sync(lambda: app.state.queue.get(job.job_id).status == "completed")
+        wait_for_sync(lambda: app.state.queue.scheduled_count() == 0)
+        assert app.state.agent.calls == [("api recovery", None)]
 
 
 def test_queue_v2_requeue_schedules_failed_job(tmp_path: Path):
@@ -206,6 +213,6 @@ def test_queue_v2_requeue_schedules_failed_job(tmp_path: Path):
         response = client.post(f"/queue/v2/{job.job_id}/requeue")
         assert response.status_code == 200
         assert response.json()["scheduled"] is True
-
-    assert app.state.queue.get(job.job_id).status == "completed"
-    assert app.state.agent.calls == [("retry through api", None)]
+        wait_for_sync(lambda: app.state.queue.get(job.job_id).status == "completed")
+        wait_for_sync(lambda: app.state.queue.scheduled_count() == 0)
+        assert app.state.agent.calls == [("retry through api", None)]
