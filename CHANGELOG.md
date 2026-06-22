@@ -4,6 +4,10 @@ All notable changes to Velocity Claw are tracked here.
 
 ## 0.2.3 - 2026-06-22
 
+### Security
+
+- Upgraded `aiohttp` from `3.13.5` to `3.14.1` to resolve the vulnerabilities reported by the dependency-audit workflow, including request/cookie leakage, parser and pipeline memory exhaustion, multipart header injection, TLS/Digest-auth redirect handling, compressed-body resource exhaustion, and WebSocket/resource-limit issues.
+
 ### Added
 
 - Added protected `/version` API endpoint with product, package version, release stage, environment, and runtime-mode metadata.
