@@ -44,6 +44,19 @@ class VelocityClawAgent:
         remembered_keys = self.project_context.ingest_context(merged)
         planning_context = self.memory.build_planning_context()
         project_memory_v2 = self.project_context.build(task, limit=5)
+        related_runs = [
+            item
+            for item in (project_memory_v2.get("related_runs") or [])
+            if item.get("status") not in {"running", "resuming_after_approval"}
+        ]
+        project_memory_v2["related_runs"] = related_runs
+        project_memory_v2["prior_successes"] = [item for item in related_runs if item.get("status") == "completed"]
+        project_memory_v2["prior_failures"] = [item for item in related_runs if item.get("status") == "failed"]
+        signals = dict(project_memory_v2.get("planning_signals") or {})
+        signals["related_run_count"] = len(related_runs)
+        signals["reuse_prior_success"] = bool(project_memory_v2["prior_successes"])
+        signals["inspect_before_edit"] = bool(project_memory_v2["prior_failures"])
+        project_memory_v2["planning_signals"] = signals
         planning_context["project_memory_v2"] = project_memory_v2
 
         structured_facts = {
@@ -58,7 +71,6 @@ class VelocityClawAgent:
         reusable_notes = project_memory_v2.get("reusable_notes") or []
         if reusable_notes:
             planning_context["recent_notes"] = reusable_notes
-        related_runs = project_memory_v2.get("related_runs") or []
         if related_runs:
             planning_context["recent_run_tasks"] = [item.get("task") for item in related_runs if item.get("task")]
             planning_context["recent_failed_tasks"] = [
@@ -66,7 +78,7 @@ class VelocityClawAgent:
                 for item in related_runs
                 if item.get("task") and item.get("status") == "failed"
             ]
-        planning_context["memory_signals_v2"] = project_memory_v2.get("planning_signals") or {}
+        planning_context["memory_signals_v2"] = signals
         if remembered_keys:
             planning_context["knowledge_ingested"] = remembered_keys
 
