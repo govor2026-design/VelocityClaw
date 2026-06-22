@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 API_DOC = Path("docs/API.md")
+QUEUE_DOC = Path("docs/QUEUE.md")
 README = Path("README.md")
 DEPLOYMENT = Path("docs/DEPLOYMENT.md")
 CHANGELOG = Path("CHANGELOG.md")
@@ -14,6 +15,10 @@ def test_api_doc_lists_v2_operator_endpoints():
         "/version",
         "/dashboard/v2",
         "/diagnostics/v2",
+        "/queue/v2/runtime",
+        "/queue/v2/recover",
+        "/queue/v2/{job_id}/requeue",
+        "/queue/v2/{job_id}/cancel",
         "/runs/{run_id}/detail/v2",
         "/runs/{run_id}/artifacts/v2",
         "/approvals/v2",
@@ -28,6 +33,26 @@ def test_api_doc_lists_v2_operator_endpoints():
     assert "GET | `/approvals/v2`" in content
     assert "?risk=high" in content
     assert "?tool=shell.run" in content
+    assert "docs/QUEUE.md" in content
+
+
+def test_queue_doc_covers_recovery_retry_and_terminal_states():
+    content = QUEUE_DOC.read_text(encoding="utf-8")
+
+    required = [
+        "recovered_after_restart_from_running",
+        "runner_completed",
+        "runner_exception",
+        "cancelled_by_operator",
+        "max_attempts_exhausted",
+        "/queue/v2/runtime",
+        "/queue/v2/recover",
+        "/queue/v2/{job_id}/requeue",
+        "/queue/v2/{job_id}/cancel",
+        "force=true",
+    ]
+    for value in required:
+        assert value in content
 
 
 def test_api_doc_documents_auth_headers_and_error_behavior():
