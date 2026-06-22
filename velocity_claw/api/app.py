@@ -12,6 +12,8 @@ from velocity_claw.api.approval_v2 import (
     reject_with_guard,
 )
 from velocity_claw.api.auth import install_api_key_auth
+from velocity_claw.api.dashboard_filters import VALID_PROFILES, VALID_RUN_STATUSES, normalize_filter
+from velocity_claw.api.dashboard_runs_v2 import render_dashboard_runs_v2
 from velocity_claw.api.dashboard_v2 import render_dashboard_v2
 from velocity_claw.api.diagnostics_v2 import build_diagnostics_v2
 from velocity_claw.api.errors import install_api_error_handlers
@@ -276,6 +278,33 @@ def install_dashboard_v2(app: FastAPI) -> None:
             provider_observability=provider_observability,
             provider_health=provider_health,
             last_failed=last_failed,
+        )
+
+    @app.get("/dashboard/v2/runs", response_class=HTMLResponse)
+    def dashboard_runs_v2(status: str | None = None, profile: str | None = None, run_id: str | None = None):
+        status_filter = normalize_filter(status)
+        profile_filter = normalize_filter(profile)
+        if status_filter and status_filter not in VALID_RUN_STATUSES:
+            raise HTTPException(status_code=400, detail={"status": "failed", "error": "invalid_status_filter", "detail": sorted(VALID_RUN_STATUSES)})
+        if profile_filter and profile_filter not in VALID_PROFILES:
+            raise HTTPException(status_code=400, detail={"status": "failed", "error": "invalid_profile_filter", "detail": sorted(VALID_PROFILES)})
+
+        runs = []
+        for summary in app.state.agent.memory.list_recent_runs(limit=100):
+            full = app.state.agent.memory.load_run(summary.get("run_id"))
+            runs.append(full or summary)
+
+        selected = None
+        if run_id:
+            selected = app.state.agent.memory.load_run(run_id)
+            if not selected:
+                raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+
+        return render_dashboard_runs_v2(
+            runs=runs,
+            status=status_filter,
+            profile=profile_filter,
+            selected_run=selected,
         )
 
 
