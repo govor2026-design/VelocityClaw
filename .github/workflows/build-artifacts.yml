@@ -38,7 +38,16 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -q
+          pytest -q 2>&1 | tee pytest-output.txt
+
+      - name: Upload pytest failure output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-pytest-failure-output
+          path: pytest-output.txt
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Build Python artifacts
         run: |
