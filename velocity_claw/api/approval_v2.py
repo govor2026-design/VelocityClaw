@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
+
+from velocity_claw.core.approval_continuation import approve_and_continue, reject_with_boundary
 
 
 TERMINAL_APPROVAL_STATUSES = {"approved", "rejected"}
@@ -32,6 +35,41 @@ def _step_history(run: dict[str, Any], step_id: int) -> list[dict[str, Any]]:
     return [event for event in run.get("approval_history", []) if event.get("step_id") == step_id]
 
 
+def _latest_terminal_decision(run: dict[str, Any], step_id: int) -> str | None:
+    for event in reversed(_step_history(run, step_id)):
+        decision = event.get("decision")
+        if decision in TERMINAL_APPROVAL_STATUSES:
+            return decision
+    return None
+
+
+def _decode_artifact_content(artifact: dict[str, Any]) -> Any:
+    content = artifact.get("content")
+    if not isinstance(content, str):
+        return content
+    try:
+        return json.loads(content)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return content
+
+
+def _continuation_events(run: dict[str, Any], step_id: int) -> list[dict[str, Any]]:
+    events = []
+    for artifact in _step_artifacts(run, step_id):
+        artifact_type = artifact.get("artifact_type")
+        if artifact_type not in {"approval_continuation", "approval_rejection"}:
+            continue
+        events.append(
+            {
+                "name": artifact.get("name"),
+                "artifact_type": artifact_type,
+                "created_at": artifact.get("created_at"),
+                "payload": _decode_artifact_content(artifact),
+            }
+        )
+    return events
+
+
 def _approval_record(pending: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
     pending_result = pending.get("result")
     if isinstance(pending_result, dict):
@@ -54,6 +92,9 @@ def evaluate_approval_decision(run: dict[str, Any] | None, step_id: int) -> Appr
         return ApprovalDecisionGuard(False, "step_not_found", None)
     status = step.get("status")
     if status != PENDING_APPROVAL_STATUS:
+        terminal_decision = _latest_terminal_decision(run, step_id)
+        if terminal_decision:
+            return ApprovalDecisionGuard(False, f"already_{terminal_decision}", status)
         if status in TERMINAL_APPROVAL_STATUSES:
             return ApprovalDecisionGuard(False, f"already_{status}", status)
         return ApprovalDecisionGuard(False, "step_not_pending_approval", status)
@@ -72,6 +113,7 @@ def build_approval_detail(run: dict[str, Any] | None, step_id: int) -> dict[str,
         }
 
     step = _find_step(run, step_id)
+    continuation = _continuation_events(run, step_id)
     return {
         "status": "ok" if step else "not_found",
         "reason": guard.reason,
@@ -84,6 +126,8 @@ def build_approval_detail(run: dict[str, Any] | None, step_id: int) -> dict[str,
         "can_decide": guard.allowed,
         "history": _step_history(run, step_id),
         "artifacts": _step_artifacts(run, step_id),
+        "continuation": continuation,
+        "latest_continuation": continuation[-1] if continuation else None,
         "links": {
             "approve": f"/approvals/v2/{run.get('run_id')}/{step_id}/approve",
             "reject": f"/approvals/v2/{run.get('run_id')}/{step_id}/reject",
@@ -206,7 +250,7 @@ async def approve_with_guard(agent: Any, run_id: str, step_id: int, actor: str, 
             "run_id": run_id,
             "step_id": step_id,
         }
-    decision = await agent.approve_step(run_id, step_id, actor=actor, reason=reason)
+    decision = await approve_and_continue(agent, run_id, step_id, actor=actor, reason=reason)
     return {
         "status": "ok",
         "decision": decision,
@@ -226,7 +270,7 @@ def reject_with_guard(agent: Any, run_id: str, step_id: int, actor: str, reason:
             "run_id": run_id,
             "step_id": step_id,
         }
-    decision = agent.reject_step(run_id, step_id, actor=actor, reason=reason)
+    decision = reject_with_boundary(agent, run_id, step_id, actor=actor, reason=reason)
     return {
         "status": "ok",
         "decision": decision,
