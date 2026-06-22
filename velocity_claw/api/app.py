@@ -46,15 +46,19 @@ def _prepare_forced_retry(queue, job) -> None:
 
 
 def install_queue_persistence_v2(app: FastAPI) -> None:
+    from velocity_claw.core.queue_tracking import install_direct_run_tracking
+
     settings = getattr(app.state, "settings", None)
     if settings is not None and hasattr(app.state.queue, "configure_runtime"):
         app.state.queue.configure_runtime(
+            max_concurrency=getattr(settings, "queue_max_concurrency", app.state.queue.max_concurrency),
             max_attempts=getattr(settings, "queue_max_attempts", 3),
             recover_on_startup=getattr(settings, "queue_recover_on_startup", True),
         )
+    install_direct_run_tracking(app.state.queue)
 
     async def startup_queue_recovery() -> None:
-        scheduled = app.state.queue.schedule_pending(app.state.agent.run_task)
+        scheduled = app.state.queue.resume(app.state.agent.run_task)
         app.state.queue_startup_schedule = {
             "scheduled_job_ids": scheduled,
             "scheduled_count": len(scheduled),
@@ -63,7 +67,14 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
         if scheduled:
             app.state.logger.info("Recovered and scheduled %s persisted queue jobs", len(scheduled))
 
+    async def shutdown_queue_workers() -> None:
+        timeout = getattr(settings, "queue_shutdown_timeout_seconds", 10) if settings is not None else 10
+        app.state.queue_shutdown = await app.state.queue.shutdown(timeout_seconds=timeout, cancel_running=True)
+        if app.state.queue_shutdown.get("timed_out"):
+            app.state.logger.warning("Queue shutdown timed out with %s pending tasks", app.state.queue_shutdown["pending_tasks"])
+
     app.router.add_event_handler("startup", startup_queue_recovery)
+    app.router.add_event_handler("shutdown", shutdown_queue_workers)
 
     @app.get("/queue/v2/runtime")
     def queue_runtime_v2():
@@ -82,6 +93,29 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
             "scheduled_count": len(scheduled),
             "queue": app.state.queue.runtime_summary(),
         }
+
+    @app.post("/queue/v2/pause")
+    def queue_pause_v2():
+        return {"status": "ok", "queue": app.state.queue.pause()}
+
+    @app.post("/queue/v2/resume")
+    async def queue_resume_v2():
+        scheduled = app.state.queue.resume(app.state.agent.run_task)
+        return {
+            "status": "ok",
+            "scheduled_job_ids": scheduled,
+            "scheduled_count": len(scheduled),
+            "queue": app.state.queue.runtime_summary(),
+        }
+
+    @app.post("/queue/v2/drain")
+    async def queue_drain_v2(timeout_seconds: float = 10.0):
+        if timeout_seconds < 0 or timeout_seconds > 3600:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "failed", "error": "invalid_timeout", "detail": "timeout_seconds must be between 0 and 3600"},
+            )
+        return await app.state.queue.drain(timeout_seconds=timeout_seconds)
 
     @app.post("/queue/v2/{job_id}/requeue")
     async def queue_requeue_v2(job_id: str, force: bool = False):
@@ -259,6 +293,7 @@ def create_app() -> FastAPI:
     app.state.api_error_handlers_installed = True
     app.state.version_endpoint_installed = True
     app.state.queue_persistence_v2_installed = True
+    app.state.queue_orchestration_v2_installed = True
     app.state.approval_v2_installed = True
     app.state.run_detail_v2_installed = True
     app.state.diagnostics_v2_installed = True

@@ -20,8 +20,14 @@ def _queue_summary(
         "completed": sum(1 for job in queue_jobs if job.get("status") == "completed"),
         "failed": sum(1 for job in queue_jobs if job.get("status") == "failed"),
         "cancelled": sum(1 for job in queue_jobs if job.get("status") == "cancelled"),
+        "orchestrator": runtime.get("orchestrator"),
+        "accepting_work": runtime.get("accepting_work", True),
         "active_workers": active_workers,
         "scheduled_workers": runtime.get("scheduled_workers", 0),
+        "tracked_tasks": runtime.get("tracked_tasks", 0),
+        "active_slots": runtime.get("active_slots", {}),
+        "available_slots": runtime.get("available_slots"),
+        "scheduling_capacity": runtime.get("scheduling_capacity"),
         "max_concurrency": runtime.get("max_concurrency", max_concurrency),
         "max_attempts": runtime.get("max_attempts"),
         "persistence_enabled": runtime.get("persistence_enabled", False),
@@ -55,6 +61,8 @@ def _risk_flags(*, settings: Any, release_state: dict[str, Any], queue: dict[str
         flags.append({"level": "medium", "code": "release_not_ready", "message": "Release readiness is not green."})
     if queue.get("failed", 0) > 0:
         flags.append({"level": "medium", "code": "queue_failures", "message": "Queue has failed jobs."})
+    if not queue.get("accepting_work", True):
+        flags.append({"level": "info", "code": "queue_not_accepting_work", "message": "Queue orchestration is paused or draining."})
     recovery = queue.get("startup_recovery") or {}
     if recovery.get("recovered_running", 0) > 0:
         flags.append({"level": "info", "code": "queue_restart_recovery", "message": "Interrupted queue jobs were recovered after restart."})
@@ -109,6 +117,8 @@ def build_diagnostics_v2(
             "queue_queued": queue["queued"],
             "queue_failed": queue["failed"],
             "queue_scheduled": queue["scheduled_workers"],
+            "queue_tracked_tasks": queue["tracked_tasks"],
+            "queue_accepting_work": queue["accepting_work"],
             "queue_recovered_running": (queue.get("startup_recovery") or {}).get("recovered_running", 0),
             "approvals_pending": len(approvals),
             "provider_failures": providers["failed"],
@@ -149,6 +159,9 @@ def build_diagnostics_v2(
             "dashboard_v2": "/dashboard/v2",
             "diagnostics_v2": "/diagnostics/v2",
             "queue_runtime_v2": "/queue/v2/runtime",
+            "queue_pause_v2": "/queue/v2/pause",
+            "queue_resume_v2": "/queue/v2/resume",
+            "queue_drain_v2": "/queue/v2/drain",
             "ops_console": "/ops/console",
             "runs": "/runs",
             "approvals": "/approvals",
