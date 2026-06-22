@@ -24,7 +24,7 @@ def _load_json(value: Optional[str], default: Any) -> Any:
         return default
     try:
         return json.loads(value)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return default
 
 
@@ -54,7 +54,7 @@ class RunQueue:
         db_path: Optional[str] = None,
         max_concurrency: int = 1,
         max_attempts: int = 3,
-        recover_on_startup: bool = True,
+        recover_on_startup: bool = False,
     ):
         self.jobs: Dict[str, QueueJob] = {}
         self.db_path = db_path
@@ -64,17 +64,47 @@ class RunQueue:
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
         self._active_jobs: set[str] = set()
         self._scheduled_jobs: set[str] = set()
-        self.startup_recovery: dict[str, Any] = {
+        self._startup_recovery_applied = False
+        self.startup_recovery: dict[str, Any] = self._empty_recovery_summary()
+        if self.db_path:
+            self._ensure_tables()
+            self._load_jobs_from_db()
+            self.startup_recovery["queued_available"] = sum(
+                1 for job in self.jobs.values() if job.status == "queued"
+            )
+            if self.recover_on_startup:
+                self.startup_recovery = self._recover_loaded_jobs()
+                self._startup_recovery_applied = True
+
+    def _empty_recovery_summary(self) -> dict[str, Any]:
+        return {
             "enabled": self.recover_on_startup,
             "recovered_running": 0,
             "queued_available": 0,
             "invalid_failed": 0,
             "at": None,
         }
-        if self.db_path:
-            self._ensure_tables()
-            self._load_jobs_from_db()
+
+    def configure_runtime(
+        self,
+        *,
+        max_attempts: int | None = None,
+        recover_on_startup: bool | None = None,
+    ) -> dict[str, Any]:
+        if max_attempts is not None:
+            self.max_attempts = max(1, int(max_attempts))
+        if recover_on_startup is not None:
+            self.recover_on_startup = bool(recover_on_startup)
+
+        if self.recover_on_startup and not self._startup_recovery_applied:
             self.startup_recovery = self._recover_loaded_jobs()
+            self._startup_recovery_applied = True
+        else:
+            self.startup_recovery["enabled"] = self.recover_on_startup
+            self.startup_recovery["queued_available"] = sum(
+                1 for job in self.jobs.values() if job.status == "queued"
+            )
+        return self.runtime_summary()
 
     def _ensure_tables(self) -> None:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -228,11 +258,12 @@ class RunQueue:
                 self._persist_job(job)
                 summary["recovered_running"] += 1
             elif job.status not in PERSISTED_STATUSES:
+                invalid_status = job.status
                 job.status = "failed"
                 job.worker_slot = None
                 job.scheduled_at = None
                 job.terminal_reason = "invalid_persisted_status"
-                job.error = f"Unsupported persisted queue status: {job.status}"
+                job.error = f"Unsupported persisted queue status: {invalid_status}"
                 job.updated_at = _now()
                 self._append_history(job, "failed", job.terminal_reason)
                 self._persist_job(job)
@@ -338,20 +369,21 @@ class RunQueue:
             self._persist_job(job)
             return False
 
-        job.scheduled_at = _now()
-        job.updated_at = job.scheduled_at
-        self._append_history(job, "queued", "worker_task_scheduled")
-        self._persist_job(job)
-        self._scheduled_jobs.add(job_id)
         try:
-            asyncio.create_task(self._run_scheduled(job_id, runner))
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            self._scheduled_jobs.discard(job_id)
             job.scheduled_at = None
             job.updated_at = _now()
             self._append_history(job, "queued", "worker_schedule_failed_no_event_loop")
             self._persist_job(job)
             return False
+
+        job.scheduled_at = _now()
+        job.updated_at = job.scheduled_at
+        self._append_history(job, "queued", "worker_task_scheduled")
+        self._persist_job(job)
+        self._scheduled_jobs.add(job_id)
+        loop.create_task(self._run_scheduled(job_id, runner))
         return True
 
     def schedule_pending(self, runner: Runner) -> list[str]:
