@@ -1,23 +1,38 @@
 name: release
 
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - VERSION
+      - .github/workflows/release.yml
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.2.0"
-        required: true
+        description: "Optional release tag; must match VERSION, for example v0.2.3"
+        required: false
+        default: ""
         type: string
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
-  validate-release:
+  publish-release:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -26,30 +41,95 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install build pip-audit
 
       - name: Validate package metadata
         run: |
+          set -euo pipefail
           python scripts/validate_package.py
 
       - name: Run tests
         run: |
-          pytest -q
+          set -euo pipefail
+          pytest -q 2>&1 | tee pytest-output.txt
 
-      - name: Validate release tag matches VERSION
+      - name: Audit dependencies
         run: |
-          VERSION_VALUE="$(cat VERSION | tr -d '[:space:]')"
+          set -euo pipefail
+          pip-audit -r requirements.txt
+
+      - name: Resolve release tag
+        id: release
+        run: |
+          set -euo pipefail
+          VERSION_VALUE="$(tr -d '[:space:]' < VERSION)"
           EXPECTED_TAG="v${VERSION_VALUE}"
-          if [ "${{ inputs.tag }}" != "$EXPECTED_TAG" ]; then
-            echo "Release tag ${{ inputs.tag }} does not match VERSION $EXPECTED_TAG" >&2
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            REQUESTED_TAG="${{ inputs.tag }}"
+            if [[ -z "${REQUESTED_TAG}" ]]; then
+              REQUESTED_TAG="${EXPECTED_TAG}"
+            fi
+          else
+            REQUESTED_TAG="${EXPECTED_TAG}"
+          fi
+
+          if [[ "${REQUESTED_TAG}" != "${EXPECTED_TAG}" ]]; then
+            echo "Release tag ${REQUESTED_TAG} does not match VERSION ${EXPECTED_TAG}" >&2
             exit 1
           fi
 
+          echo "version=${VERSION_VALUE}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${EXPECTED_TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Inspect existing tag and release
+        id: state
+        env:
+          TAG_VALUE: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          TAG_SHA=""
+          if git show-ref --verify --quiet "refs/tags/${TAG_VALUE}"; then
+            TAG_SHA="$(git rev-list -n 1 "${TAG_VALUE}")"
+          fi
+
+          if gh release view "${TAG_VALUE}" >/dev/null 2>&1; then
+            RELEASE_EXISTS="true"
+          else
+            RELEASE_EXISTS="false"
+          fi
+
+          if [[ -n "${TAG_SHA}" && "${TAG_SHA}" != "${GITHUB_SHA}" ]]; then
+            if [[ "${RELEASE_EXISTS}" == "false" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+              echo "Tag ${TAG_VALUE} points to ${TAG_SHA}, but this run uses ${GITHUB_SHA}. Select the tag ref for a manual repair run." >&2
+              exit 1
+            fi
+          fi
+
+          echo "tag_sha=${TAG_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "release_exists=${RELEASE_EXISTS}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build Python artifacts
+        run: |
+          set -euo pipefail
+          rm -rf dist build
+          python -m build
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          python scripts/generate_release_notes.py
+
       - name: Generate release summary
         run: |
-          VERSION_VALUE="$(cat VERSION | tr -d '[:space:]')"
-          mkdir -p dist
+          set -euo pipefail
+          VERSION_VALUE="${{ steps.release.outputs.version }}"
+          TAG_VALUE="${{ steps.release.outputs.tag }}"
           {
             echo "# Velocity Claw ${VERSION_VALUE}"
             echo
@@ -57,22 +137,71 @@ jobs:
             echo
             echo "- Package metadata validated"
             echo "- Tests passed"
-            echo "- Release tag matched VERSION"
+            echo "- Dependency audit passed"
+            echo "- Wheel and source distribution built"
+            echo "- Release tag ${TAG_VALUE} matched VERSION"
             echo
             echo "## Release docs"
             echo
+            echo "- CHANGELOG.md"
             echo "- docs/RELEASE.md"
+            echo "- docs/RELEASE_AUTOMATION.md"
             echo "- docs/DEPLOYMENT.md"
           } > dist/release-summary.md
 
-      - name: Generate release notes
+      - name: Publish or update GitHub Release
+        env:
+          RELEASE_EXISTS: ${{ steps.state.outputs.release_exists }}
         run: |
-          python scripts/generate_release_notes.py
+          set -euo pipefail
+          TAG_VALUE="${{ steps.release.outputs.tag }}"
+          VERSION_VALUE="${{ steps.release.outputs.version }}"
+
+          if [[ "${RELEASE_EXISTS}" == "true" ]]; then
+            if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
+              echo "Release ${TAG_VALUE} already exists; automatic runs preserve immutable release assets."
+            else
+              gh release edit "${TAG_VALUE}" \
+                --title "Velocity Claw ${VERSION_VALUE}" \
+                --notes-file dist/release-notes.md
+              gh release upload "${TAG_VALUE}" \
+                dist/*.whl \
+                dist/*.tar.gz \
+                dist/release-summary.md \
+                --clobber
+            fi
+          else
+            gh release create "${TAG_VALUE}" \
+              dist/*.whl \
+              dist/*.tar.gz \
+              dist/release-summary.md \
+              --target "${GITHUB_SHA}" \
+              --title "Velocity Claw ${VERSION_VALUE}" \
+              --notes-file dist/release-notes.md
+          fi
+
+      - name: Verify published release
+        run: |
+          set -euo pipefail
+          gh release view "${{ steps.release.outputs.tag }}" --json tagName,name,isDraft,isPrerelease
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts
+          name: release-artifacts-${{ steps.release.outputs.tag }}
           path: |
+            dist/*.whl
+            dist/*.tar.gz
             dist/release-summary.md
             dist/release-notes.md
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload pytest failure output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-pytest-failure-output
+          path: pytest-output.txt
+          if-no-files-found: ignore
+          retention-days: 7
