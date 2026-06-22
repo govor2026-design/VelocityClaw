@@ -125,6 +125,13 @@ class Planner:
             if recent_notes:
                 compact_notes = [f"{item.get('note_type')}: {item.get('content')}" for item in recent_notes[:5]]
                 instructions.append(f"Recent project notes: {json.dumps(compact_notes, ensure_ascii=False)}")
+            memory_signals = planning_context.get("memory_signals_v2") or {}
+            if memory_signals:
+                instructions.append(f"Repo-aware memory signals: {json.dumps(memory_signals, ensure_ascii=False)}")
+                if memory_signals.get("reuse_prior_success"):
+                    instructions.append("Переиспользуй проверенные результаты похожего успешного запуска и не повторяй то же исследование без признаков устаревания или противоречия.")
+                if memory_signals.get("inspect_before_edit"):
+                    instructions.append("Есть связанные прошлые ошибки: перед редактированием обязательно проверь актуальное состояние через inspection-first шаги и учти прежний failure context.")
             last_failed = planning_context.get("last_failed_run")
             if last_failed:
                 instructions.append(f"Last failed run: {json.dumps(last_failed, ensure_ascii=False)}")
