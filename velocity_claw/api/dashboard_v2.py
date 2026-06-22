@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from html import escape
 from typing import Any
 
@@ -10,9 +11,14 @@ def html_escape(value: Any) -> str:
     return escape(str(value if value is not None else ""), quote=True)
 
 
+def _css_token(value: Any) -> str:
+    token = re.sub(r"[^a-z0-9_-]+", "-", str(value or "unknown").strip().lower())
+    return token.strip("-") or "unknown"
+
+
 def status_badge(status: str) -> str:
-    normalized = (status or "unknown").lower()
-    return f"<span class='badge badge-{html_escape(normalized)}'>{html_escape(status or 'unknown')}</span>"
+    normalized = _css_token(status)
+    return f"<span class='badge badge-{normalized}'>{html_escape(status or 'unknown')}</span>"
 
 
 def number_card(label: str, value: Any) -> str:
@@ -22,11 +28,11 @@ def number_card(label: str, value: Any) -> str:
 def run_links(run_id: Any) -> str:
     safe_run_id = html_escape(run_id)
     return (
-        f"<a href='/runs/{safe_run_id}/detail/v2'>detail v2</a> · "
-        f"<a href='/runs/{safe_run_id}/artifacts/v2'>artifacts</a> · "
+        f"<a href='/runs/{safe_run_id}/view'>inspect</a> · "
+        f"<a href='/runs/{safe_run_id}/detail/v2'>detail json</a> · "
+        f"<a href='/runs/{safe_run_id}/artifacts/v2'>artifacts json</a> · "
         f"<a href='/runs/{safe_run_id}/forensics'>forensics</a> · "
-        f"<a href='/runs/{safe_run_id}/report'>report</a> · "
-        f"<a href='/runs/{safe_run_id}/view'>classic</a>"
+        f"<a href='/runs/{safe_run_id}/report'>report</a>"
     )
 
 
@@ -35,8 +41,15 @@ def approval_links(run_id: Any, step_id: Any) -> str:
     safe_step_id = html_escape(step_id)
     return (
         f"<a href='/approvals/v2/{safe_run_id}/{safe_step_id}'>review</a> · "
-        f"<a href='/runs/{safe_run_id}/detail/v2'>run detail</a>"
+        f"<a href='/runs/{safe_run_id}/view'>inspect run</a>"
     )
+
+
+def _filter_options(values: list[str], label: str) -> str:
+    options = [f"<option value=''>All {html_escape(label)}</option>"]
+    for value in sorted({item for item in values if item}):
+        options.append(f"<option value='{html_escape(value)}'>{html_escape(value)}</option>")
+    return "".join(options)
 
 
 def dashboard_risk_flags(*, trusted_mode: bool, release_state: dict[str, Any], queue_summary: dict[str, Any], approvals: list[dict[str, Any]], provider_summary: dict[str, Any], last_failed: dict[str, Any] | None) -> list[dict[str, str]]:
@@ -98,13 +111,20 @@ def render_dashboard_v2(
     )
 
     run_rows = []
+    run_statuses: list[str] = []
+    run_profiles: list[str] = []
     for run in recent_runs:
         run_id = run.get("run_id", "")
+        status = str(run.get("status") or "unknown").lower()
+        profile = str(run.get("execution_profile") or "unknown").lower()
+        run_statuses.append(status)
+        run_profiles.append(profile)
         run_rows.append(
-            "<tr>"
-            f"<td><code>{html_escape(run_id)}</code></td>"
+            f"<tr class='run-row' data-status='{html_escape(status)}' data-profile='{html_escape(profile)}'>"
+            f"<td><a href='/runs/{html_escape(run_id)}/view'><code>{html_escape(run_id)}</code></a></td>"
             f"<td>{html_escape(run.get('task'))}</td>"
-            f"<td>{status_badge(str(run.get('status') or 'unknown'))}</td>"
+            f"<td>{status_badge(status)}</td>"
+            f"<td><code>{html_escape(profile)}</code></td>"
             f"<td>{html_escape(run.get('created_at'))}</td>"
             f"<td>{run_links(run_id)}</td>"
             "</tr>"
@@ -137,7 +157,7 @@ def render_dashboard_v2(
         )
 
     provider_rows = []
-    for provider, state in provider_health.items():
+    for provider, state in (provider_health or {}).items():
         provider_rows.append(
             "<tr>"
             f"<td>{html_escape(provider)}</td>"
@@ -149,7 +169,7 @@ def render_dashboard_v2(
             "</tr>"
         )
 
-    last_failed_block = "<p>No failed runs recorded.</p>"
+    last_failed_block = "<p class='empty-state'>No failed runs recorded.</p>"
     if last_failed:
         run_id = last_failed.get("run_id", "")
         last_failed_block = (
@@ -157,6 +177,10 @@ def render_dashboard_v2(
             f"{status_badge(str(last_failed.get('status') or 'failed'))} "
             f"{run_links(run_id)}</p>"
         )
+
+    status_options = _filter_options(run_statuses, "statuses")
+    profile_options = _filter_options(run_profiles, "profiles")
+    recorded_empty = "" if run_rows else "<tr id='runs-recorded-empty'><td colspan='6' class='empty-state'>No runs recorded yet.</td></tr>"
 
     return f"""
 <!doctype html>
@@ -167,31 +191,37 @@ def render_dashboard_v2(
   <title>Velocity Claw Dashboard v2</title>
   <style>
     :root {{ color-scheme: dark; --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --line:#263244; --accent:#38bdf8; }}
-    body {{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif; background:var(--bg); color:var(--text); }}
+    body {{ margin:0; font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial,sans-serif; background:var(--bg); color:var(--text); }}
     main {{ max-width:1280px; margin:0 auto; padding:28px; }}
     header {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; margin-bottom:24px; }}
     h1 {{ margin:0; font-size:32px; }}
     h2 {{ margin:0 0 12px; font-size:20px; }}
     a {{ color:var(--accent); text-decoration:none; }}
-    .muted {{ color:var(--muted); }}
-    .grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin:18px 0; }}
+    .muted,.empty-state {{ color:var(--muted); }}
+    .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:18px 0; }}
     .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.18); }}
     .metric .label {{ color:var(--muted); font-size:13px; }}
     .metric .value {{ font-size:26px; font-weight:700; margin-top:6px; }}
     .section {{ margin-top:18px; }}
     table {{ width:100%; border-collapse:collapse; overflow:hidden; border-radius:12px; }}
-    th, td {{ border-bottom:1px solid var(--line); padding:10px; text-align:left; vertical-align:top; }}
+    th,td {{ border-bottom:1px solid var(--line); padding:10px; text-align:left; vertical-align:top; }}
     th {{ color:var(--muted); font-size:13px; font-weight:600; }}
-    code {{ background:#020617; border:1px solid var(--line); border-radius:8px; padding:2px 6px; }}
+    code,pre {{ background:#020617; border:1px solid var(--line); border-radius:8px; }}
+    code {{ padding:2px 6px; }}
+    pre {{ padding:12px; overflow:auto; }}
     .badge {{ display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font-size:12px; }}
-    .badge-completed, .badge-ok, .badge-ready {{ border-color:#22c55e; color:#86efac; }}
-    .badge-failed, .badge-error, .badge-high {{ border-color:#ef4444; color:#fca5a5; }}
-    .badge-running, .badge-pending, .badge-cooldown, .badge-medium {{ border-color:#f59e0b; color:#fcd34d; }}
+    .badge-completed,.badge-success,.badge-passed,.badge-ok,.badge-ready {{ border-color:#22c55e; color:#86efac; }}
+    .badge-failed,.badge-error,.badge-high,.badge-rejected,.badge-cancelled {{ border-color:#ef4444; color:#fca5a5; }}
+    .badge-running,.badge-pending,.badge-pending_approval,.badge-awaiting_approval,.badge-cooldown,.badge-medium {{ border-color:#f59e0b; color:#fcd34d; }}
     .badge-info {{ border-color:#38bdf8; color:#7dd3fc; }}
-    .nav {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }}
+    .nav,.filters {{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }}
     .nav a {{ background:#020617; border:1px solid var(--line); border-radius:999px; padding:8px 10px; }}
+    label {{ color:var(--muted); font-size:13px; }}
+    select,button {{ color:var(--text); background:#020617; border:1px solid var(--line); border-radius:9px; padding:8px 10px; }}
+    button {{ cursor:pointer; }}
     ul {{ margin:0; padding-left:20px; }}
     li {{ margin:7px 0; }}
+    @media (max-width:800px) {{ header {{ flex-direction:column; }} .table-wrap {{ overflow-x:auto; }} }}
   </style>
 </head>
 <body>
@@ -199,7 +229,7 @@ def render_dashboard_v2(
   <header>
     <div>
       <h1>Velocity Claw Dashboard v2</h1>
-      <p class='muted'>Operational overview for runs, approvals, queue, providers, and release readiness.</p>
+      <p class='muted'>Operational overview with filtered runs and direct HTML inspection of steps and artifacts.</p>
       <div class='nav'>
         <a href='/version'>version</a>
         <a href='/dashboard'>classic dashboard</a>
@@ -242,30 +272,42 @@ def render_dashboard_v2(
 
   <section class='card section'>
     <h2>Recent runs</h2>
-    <table><thead><tr><th>Run ID</th><th>Task</th><th>Status</th><th>Created</th><th>Links</th></tr></thead><tbody>
-      {''.join(run_rows) or "<tr><td colspan='5'>No runs recorded.</td></tr>"}
-    </tbody></table>
+    <div class='filters' aria-label='Run filters'>
+      <label for='run-status-filter'>Status</label>
+      <select id='run-status-filter'>{status_options}</select>
+      <label for='run-profile-filter'>Profile</label>
+      <select id='run-profile-filter'>{profile_options}</select>
+      <button type='button' id='run-filter-clear'>Clear</button>
+      <span class='muted'>Visible: <b id='run-visible-count'>{len(run_rows)}</b> / {len(run_rows)}</span>
+    </div>
+    <div class='table-wrap'>
+      <table id='runs-table'><thead><tr><th>Run ID</th><th>Task</th><th>Status</th><th>Profile</th><th>Created</th><th>Inspect</th></tr></thead><tbody>
+        {''.join(run_rows)}
+        {recorded_empty}
+        <tr id='runs-filter-empty' hidden><td colspan='6' class='empty-state'>No runs match the selected status and profile.</td></tr>
+      </tbody></table>
+    </div>
   </section>
 
   <section class='card section'>
     <h2>Pending approvals</h2>
-    <table><thead><tr><th>Run ID</th><th>Step</th><th>Title</th><th>Reason</th><th>Links</th></tr></thead><tbody>
-      {''.join(approval_rows) or "<tr><td colspan='5'>No pending approvals.</td></tr>"}
-    </tbody></table>
+    <div class='table-wrap'><table><thead><tr><th>Run ID</th><th>Step</th><th>Title</th><th>Reason</th><th>Links</th></tr></thead><tbody>
+      {''.join(approval_rows) or "<tr><td colspan='5' class='empty-state'>No pending approvals.</td></tr>"}
+    </tbody></table></div>
   </section>
 
   <section class='card section'>
     <h2>Queue</h2>
-    <table><thead><tr><th>Job ID</th><th>Task</th><th>Status</th><th>Attempts</th><th>Terminal reason</th></tr></thead><tbody>
-      {''.join(queue_rows) or "<tr><td colspan='5'>No queued jobs.</td></tr>"}
-    </tbody></table>
+    <div class='table-wrap'><table><thead><tr><th>Job ID</th><th>Task</th><th>Status</th><th>Attempts</th><th>Terminal reason</th></tr></thead><tbody>
+      {''.join(queue_rows) or "<tr><td colspan='5' class='empty-state'>No queued jobs.</td></tr>"}
+    </tbody></table></div>
   </section>
 
   <section class='card section'>
     <h2>Provider health</h2>
-    <table><thead><tr><th>Provider</th><th>Requests</th><th>Successes</th><th>Failures</th><th>State</th><th>Last error</th></tr></thead><tbody>
-      {''.join(provider_rows) or "<tr><td colspan='6'>No provider health data.</td></tr>"}
-    </tbody></table>
+    <div class='table-wrap'><table><thead><tr><th>Provider</th><th>Requests</th><th>Successes</th><th>Failures</th><th>State</th><th>Last error</th></tr></thead><tbody>
+      {''.join(provider_rows) or "<tr><td colspan='6' class='empty-state'>No provider health data.</td></tr>"}
+    </tbody></table></div>
   </section>
 
   <section class='card section'>
@@ -273,6 +315,30 @@ def render_dashboard_v2(
     <pre>{html_escape(metrics)}</pre>
   </section>
 </main>
+<script>
+(() => {{
+  const status = document.getElementById('run-status-filter');
+  const profile = document.getElementById('run-profile-filter');
+  const clear = document.getElementById('run-filter-clear');
+  const rows = Array.from(document.querySelectorAll('.run-row'));
+  const empty = document.getElementById('runs-filter-empty');
+  const count = document.getElementById('run-visible-count');
+  const apply = () => {{
+    let visible = 0;
+    rows.forEach((row) => {{
+      const show = (!status.value || row.dataset.status === status.value) && (!profile.value || row.dataset.profile === profile.value);
+      row.hidden = !show;
+      if (show) visible += 1;
+    }});
+    count.textContent = String(visible);
+    empty.hidden = rows.length === 0 || visible !== 0;
+  }};
+  status.addEventListener('change', apply);
+  profile.addEventListener('change', apply);
+  clear.addEventListener('click', () => {{ status.value = ''; profile.value = ''; apply(); }});
+  apply();
+}})();
+</script>
 </body>
 </html>
 """.strip()
