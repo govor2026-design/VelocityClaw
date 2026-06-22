@@ -46,6 +46,8 @@ def _prepare_forced_retry(queue, job) -> None:
 
 
 def install_queue_persistence_v2(app: FastAPI) -> None:
+    from velocity_claw.core.queue_tracking import install_direct_run_tracking
+
     settings = getattr(app.state, "settings", None)
     if settings is not None and hasattr(app.state.queue, "configure_runtime"):
         app.state.queue.configure_runtime(
@@ -53,6 +55,7 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
             max_attempts=getattr(settings, "queue_max_attempts", 3),
             recover_on_startup=getattr(settings, "queue_recover_on_startup", True),
         )
+    install_direct_run_tracking(app.state.queue)
 
     async def startup_queue_recovery() -> None:
         scheduled = app.state.queue.resume(app.state.agent.run_task)
