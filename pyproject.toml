@@ -9,6 +9,8 @@ description = "Self-hosted AI dev-agent for controlled repo automation, approval
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [{ name = "Velocity Claw maintainers" }]
+keywords = ["ai-agent", "dev-agent", "automation", "fastapi", "self-hosted"]
 dependencies = [
   "fastapi==0.135.3",
   "uvicorn[standard]==0.43.0",
