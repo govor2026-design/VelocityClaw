@@ -18,6 +18,8 @@ Planning and resume artifacts include `project_memory_v2`. The agent also projec
 - `recent_failed_tasks` for related failures;
 - `memory_signals_v2` for reuse and inspection hints.
 
+The Planner consumes `memory_signals_v2` directly. A prior successful related run produces an explicit reuse directive, while a related failure strengthens inspection-first planning before edits.
+
 Related runs are ranked by meaningful term overlap and recency rather than exact full-task substring matching. The current active run is removed before context reaches the Planner.
 
 Existing API responses remain compatible:
