@@ -12,13 +12,14 @@ from velocity_claw.api.approval_v2 import (
     reject_with_guard,
 )
 from velocity_claw.api.auth import install_api_key_auth
-from velocity_claw.api.dashboard_v2 import render_dashboard_v2
+from velocity_claw.api.dashboard_v2 import render_dashboard_v2, render_run_inspector_v2
 from velocity_claw.api.diagnostics_v2 import build_diagnostics_v2
 from velocity_claw.api.errors import install_api_error_handlers
 from velocity_claw.api.ops_console import build_operations_console
 from velocity_claw.api.run_detail_v2 import build_artifact_index, build_run_detail_v2
 from velocity_claw.api.server import ApprovalDecisionRequest, create_app as create_base_app
 from velocity_claw.api.version import build_version_payload
+from velocity_claw.memory.run_profiles import install_run_profile_tracking
 
 
 def install_version_endpoint(app: FastAPI) -> None:
@@ -235,8 +236,10 @@ def install_diagnostics_v2(app: FastAPI) -> None:
 
 
 def install_dashboard_v2(app: FastAPI) -> None:
+    run_profiles = install_run_profile_tracking(app.state.agent)
+
     @app.get("/dashboard/v2", response_class=HTMLResponse)
-    def dashboard_v2():
+    def dashboard_v2(status: str | None = None, profile: str | None = None, q: str | None = None):
         if hasattr(app.state, "metrics"):
             app.state.metrics.set_value("approvals_pending", len(app.state.agent.list_pending_approvals()))
             queue_jobs_for_metrics = app.state.queue.list_jobs()
@@ -263,19 +266,53 @@ def install_dashboard_v2(app: FastAPI) -> None:
             max_concurrency=app.state.queue.max_concurrency,
         )
 
+        all_runs = app.state.agent.memory.list_recent_runs(limit=100)
+        available_statuses = sorted({str(item.get("status") or "unknown") for item in all_runs})
+        available_profiles = sorted({str(item.get("execution_profile") or "unknown") for item in all_runs} | set(run_profiles.list_profiles()))
+        normalized_status = (status or "").strip().lower()
+        normalized_profile = (profile or "").strip().lower()
+        normalized_query = (q or "").strip().lower()
+        filtered_runs = []
+        for run in all_runs:
+            run_status = str(run.get("status") or "unknown").lower()
+            run_profile = str(run.get("execution_profile") or "unknown").lower()
+            search_text = f"{run.get('run_id') or ''} {run.get('task') or ''}".lower()
+            if normalized_status and run_status != normalized_status:
+                continue
+            if normalized_profile and run_profile != normalized_profile:
+                continue
+            if normalized_query and normalized_query not in search_text:
+                continue
+            filtered_runs.append(run)
+
         return render_dashboard_v2(
             execution_profile=app.state.settings.execution_profile,
             safe_mode=app.state.settings.safe_mode,
             trusted_mode=app.state.settings.trusted_mode,
             release_state=release_state,
             console=console_snapshot,
-            recent_runs=app.state.agent.memory.list_recent_runs(limit=10),
+            recent_runs=filtered_runs[:50],
             approvals=approvals,
-            queue_jobs=queue_jobs[:10],
+            queue_jobs=queue_jobs[:20],
             metrics=metrics,
             provider_observability=provider_observability,
             provider_health=provider_health,
             last_failed=last_failed,
+            filters={"status": normalized_status, "profile": normalized_profile, "q": q or ""},
+            available_statuses=available_statuses,
+            available_profiles=available_profiles,
+            total_run_count=len(all_runs),
+        )
+
+    @app.get("/runs/{run_id}/inspect/v2", response_class=HTMLResponse)
+    def run_inspector_v2(run_id: str, step: int | None = None, artifact_type: str | None = None):
+        run = app.state.agent.memory.load_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+        return render_run_inspector_v2(
+            run,
+            selected_step_id=step,
+            artifact_type=(artifact_type or "").strip() or None,
         )
 
 
@@ -298,5 +335,6 @@ def create_app() -> FastAPI:
     app.state.run_detail_v2_installed = True
     app.state.diagnostics_v2_installed = True
     app.state.dashboard_v2_installed = True
+    app.state.run_profile_tracking_installed = True
     app.state.api_key_auth_installed = True
     return app
