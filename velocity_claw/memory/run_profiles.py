@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 class RunProfileStore:
@@ -13,7 +13,13 @@ class RunProfileStore:
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
             self._ensure_table()
 
+    @property
+    def enabled(self) -> bool:
+        return bool(self.db_path)
+
     def _ensure_table(self) -> None:
+        if not self.db_path:
+            return
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -76,46 +82,75 @@ class RunProfileStore:
         return [row[0] for row in rows]
 
 
-def install_run_profile_tracking(agent: Any) -> RunProfileStore:
-    """Record profiles for future runs and enrich existing memory reads.
+def _callable_attr(target: Any, name: str) -> Callable | None:
+    value = getattr(target, name, None)
+    return value if callable(value) else None
 
-    The adapter is installed once and preserves the public MemoryStore method
-    signatures. Historical rows without metadata are reported as ``unknown``.
+
+def install_run_profile_tracking(agent: Any) -> RunProfileStore:
+    """Optionally record run profiles and enrich memory reads.
+
+    Persistence is enabled only when the memory backend explicitly reports that it
+    is enabled and exposes a database path. Read-only or partial memory backends
+    remain valid Dashboard sources: their run lists are enriched with ``unknown``
+    without requiring ``create_run`` or ``load_run`` methods.
     """
     existing = getattr(agent, "run_profiles", None)
     if existing is not None:
         return existing
 
-    memory = agent.memory
-    store = RunProfileStore(getattr(memory, "db_path", None))
-    original_create_run = memory.create_run
-    original_list_recent_runs = memory.list_recent_runs
-    original_load_run = memory.load_run
+    memory = getattr(agent, "memory", None)
+    memory_enabled = bool(getattr(memory, "enabled", False))
+    db_path = getattr(memory, "db_path", None) if memory_enabled else None
+    store = RunProfileStore(db_path)
 
-    def create_run(task: str) -> str:
-        run_id = original_create_run(task)
-        store.record(run_id, getattr(agent.settings, "execution_profile", "unknown"))
-        return run_id
+    if memory is None:
+        agent.run_profiles = store
+        return store
 
-    def list_recent_runs(limit: int = 20):
-        runs = original_list_recent_runs(limit=limit)
-        profiles = store.get_many([item.get("run_id") for item in runs])
-        return [
-            {
-                **item,
-                "execution_profile": profiles.get(item.get("run_id"), "unknown"),
-            }
-            for item in runs
-        ]
+    original_create_run = _callable_attr(memory, "create_run")
+    original_list_recent_runs = _callable_attr(memory, "list_recent_runs")
+    original_load_run = _callable_attr(memory, "load_run")
 
-    def load_run(run_id: str):
-        run = original_load_run(run_id)
-        if run is not None:
-            run["execution_profile"] = store.get(run_id) or "unknown"
-        return run
+    if store.enabled and original_create_run is not None:
+        def create_run(task: str) -> str:
+            run_id = original_create_run(task)
+            settings = getattr(agent, "settings", None)
+            store.record(run_id, getattr(settings, "execution_profile", "unknown"))
+            return run_id
 
-    memory.create_run = create_run
-    memory.list_recent_runs = list_recent_runs
-    memory.load_run = load_run
+        memory.create_run = create_run
+
+    if original_list_recent_runs is not None:
+        def list_recent_runs(limit: int = 20):
+            runs = original_list_recent_runs(limit=limit)
+            profiles = store.get_many([item.get("run_id") for item in runs])
+            return [
+                {
+                    **item,
+                    "execution_profile": (
+                        profiles.get(item.get("run_id"))
+                        or item.get("execution_profile")
+                        or "unknown"
+                    ),
+                }
+                for item in runs
+            ]
+
+        memory.list_recent_runs = list_recent_runs
+
+    if original_load_run is not None:
+        def load_run(run_id: str):
+            run = original_load_run(run_id)
+            if run is not None:
+                run["execution_profile"] = (
+                    store.get(run_id)
+                    or run.get("execution_profile")
+                    or "unknown"
+                )
+            return run
+
+        memory.load_run = load_run
+
     agent.run_profiles = store
     return store
