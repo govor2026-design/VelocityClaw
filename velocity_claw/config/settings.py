@@ -90,6 +90,10 @@ class Settings:
     provider_max_retries: int = 2
     provider_retry_backoff_ms: int = 250
     provider_health_cooldown_seconds: int = 30
+    queue_max_concurrency: int = 2
+    queue_max_attempts: int = 3
+    queue_recover_on_startup: bool = True
+    queue_shutdown_timeout_seconds: int = 10
 
     def __post_init__(self):
         self.env = get_env("ENV", self.env).strip().lower()
@@ -127,6 +131,10 @@ class Settings:
         self.provider_max_retries = parse_int("PROVIDER_MAX_RETRIES", get_env("PROVIDER_MAX_RETRIES"), self.provider_max_retries, min_value=0, max_value=10)
         self.provider_retry_backoff_ms = parse_int("PROVIDER_RETRY_BACKOFF_MS", get_env("PROVIDER_RETRY_BACKOFF_MS"), self.provider_retry_backoff_ms, min_value=0)
         self.provider_health_cooldown_seconds = parse_int("PROVIDER_HEALTH_COOLDOWN_SECONDS", get_env("PROVIDER_HEALTH_COOLDOWN_SECONDS"), self.provider_health_cooldown_seconds, min_value=0)
+        self.queue_max_concurrency = parse_int("QUEUE_MAX_CONCURRENCY", get_env("QUEUE_MAX_CONCURRENCY"), self.queue_max_concurrency, min_value=1, max_value=64)
+        self.queue_max_attempts = parse_int("QUEUE_MAX_ATTEMPTS", get_env("QUEUE_MAX_ATTEMPTS"), self.queue_max_attempts, min_value=1, max_value=100)
+        self.queue_recover_on_startup = parse_bool(get_env("QUEUE_RECOVER_ON_STARTUP"), self.queue_recover_on_startup)
+        self.queue_shutdown_timeout_seconds = parse_int("QUEUE_SHUTDOWN_TIMEOUT_SECONDS", get_env("QUEUE_SHUTDOWN_TIMEOUT_SECONDS"), self.queue_shutdown_timeout_seconds, min_value=0, max_value=3600)
         self.validate()
 
     def validate(self) -> None:
@@ -154,7 +162,6 @@ class Settings:
     @property
     def safe_mode_prompt(self) -> str:
         from velocity_claw.prompts.safe_mode import SAFE_MODE_PROMPT
-
         return SAFE_MODE_PROMPT
 
 
