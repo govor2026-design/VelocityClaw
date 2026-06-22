@@ -7,8 +7,10 @@ from velocity_claw.core.queue import RunQueue
 
 
 class QueueSettings:
+    queue_max_concurrency = 5
     queue_max_attempts = 7
     queue_recover_on_startup = True
+    queue_shutdown_timeout_seconds = 2
 
 
 class FakeAgent:
@@ -18,6 +20,9 @@ class FakeAgent:
 
 class FakeLogger:
     def info(self, *args, **kwargs):
+        pass
+
+    def warning(self, *args, **kwargs):
         pass
 
 
@@ -32,7 +37,7 @@ def test_production_queue_settings_apply_before_startup_scheduling(tmp_path: Pat
 
     app = FastAPI()
     app.state.settings = QueueSettings()
-    app.state.queue = RunQueue(db_path=str(db_path), max_attempts=3, recover_on_startup=False)
+    app.state.queue = RunQueue(db_path=str(db_path), max_concurrency=2, max_attempts=3, recover_on_startup=False)
     app.state.agent = FakeAgent()
     app.state.logger = FakeLogger()
 
@@ -41,6 +46,7 @@ def test_production_queue_settings_apply_before_startup_scheduling(tmp_path: Pat
     install_queue_persistence_v2(app)
 
     recovered = app.state.queue.get(job.job_id)
+    assert app.state.queue.max_concurrency == 5
     assert app.state.queue.max_attempts == 7
     assert app.state.queue.recover_on_startup is True
     assert recovered.status == "queued"
