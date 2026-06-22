@@ -102,6 +102,7 @@ class Planner:
             "Не начинай план с patch.apply, fs.write, shell.run или git.run, если сначала можно понять ситуацию через inspection tools.",
             "Перед редактированием предпочитай сначала хотя бы один из шагов: git.inspect, code.find_symbol, code.read_symbol, test.run, fs.read или analysis.",
             "Если memory signals показывают repeated failures, pending approvals или свежий failure pattern, учитывай это прямо в порядке шагов.",
+            "Если repo-aware memory уже содержит проверенные facts, решения, ограничения или результаты похожих запусков, используй их и не повторяй то же исследование без причины.",
             f"Задача: {task}",
         ]
         if context.get("project_root"):
@@ -112,6 +113,17 @@ class Planner:
             project_facts = planning_context.get("project_facts") or {}
             if project_facts:
                 instructions.append(f"Project facts: {json.dumps(project_facts, ensure_ascii=False)}")
+            project_knowledge = planning_context.get("project_knowledge") or {}
+            if project_knowledge:
+                instructions.append(f"Reusable project knowledge: {json.dumps(project_knowledge, ensure_ascii=False)}")
+            related_runs = planning_context.get("related_runs") or []
+            if related_runs:
+                instructions.append(f"Related prior runs ranked by relevance: {json.dumps(related_runs[:5], ensure_ascii=False)}")
+            related_failed = planning_context.get("related_failed_runs") or []
+            if related_failed:
+                instructions.append(f"Related failed runs: {json.dumps(related_failed[:5], ensure_ascii=False)}")
+            if planning_context.get("avoid_rediscovery"):
+                instructions.append("Avoid rediscovery: prefer saved knowledge and prior successful findings; inspect again only when stale, missing, or contradicted.")
             recent_tasks = planning_context.get("recent_run_tasks") or []
             if recent_tasks:
                 instructions.append(f"Recent run tasks: {json.dumps(recent_tasks, ensure_ascii=False)}")
