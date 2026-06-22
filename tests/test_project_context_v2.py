@@ -22,16 +22,17 @@ def build_memory(tmp_path: Path) -> MemoryStore:
     return MemoryStore(MemorySettings(tmp_path / "memory.db"))
 
 
-def test_task_similarity_matches_reordered_repo_terms():
+def test_task_similarity_normalizes_simple_plural_terms():
     score, matched = task_similarity(
         "Fix queue worker cancellation",
         "Repair cancellation handling in queue workers",
     )
 
-    assert score > 0.4
+    assert score > 0.5
     assert "queue" in matched
+    assert "worker" in matched
     assert "cancellation" in matched
-    assert normalize_tokens("Fix the queue") == {"fix", "queue"}
+    assert normalize_tokens("Fix the queue workers") == {"fix", "queue", "worker"}
 
 
 def test_structured_knowledge_lifecycle(tmp_path: Path):
@@ -89,6 +90,28 @@ def test_build_separates_reusable_knowledge_from_run_trace(tmp_path: Path):
     assert built["related_runs"][0]["run_id"] == related_id
     assert all(item["run_id"] != unrelated_id for item in built["related_runs"])
     assert built["planning_signals"]["reuse_prior_success"] is True
+
+
+def test_relevance_is_scored_before_result_limit(tmp_path: Path):
+    context = ProjectContextV2(build_memory(tmp_path))
+    context.remember(
+        "queue.cancellation.path",
+        "velocity_claw/core/queue.py",
+        category="path",
+        confidence=0.1,
+    )
+    for index in range(105):
+        context.remember(
+            f"dashboard.unrelated.{index}",
+            f"typography value {index}",
+            category="fact",
+            confidence=1.0,
+        )
+
+    built = context.build("Fix queue cancellation", limit=3)
+    selected_keys = [item["key"] for item in built["reusable_knowledge"]]
+
+    assert "queue.cancellation.path" in selected_keys
 
 
 def test_context_ingestion_accepts_mapping_and_records_usage(tmp_path: Path):
