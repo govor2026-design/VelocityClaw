@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
@@ -25,6 +27,24 @@ def install_version_endpoint(app: FastAPI) -> None:
         return build_version_payload(app.state.settings)
 
 
+def _prepare_forced_retry(queue, job) -> None:
+    if job.attempts < queue.max_attempts:
+        return
+    previous_attempts = job.attempts
+    job.attempts = 0
+    job.updated_at = datetime.now().isoformat()
+    job.history.append(
+        {
+            "status": "queued",
+            "reason": "forced_retry_cycle_reset",
+            "at": job.updated_at,
+            "attempts": 0,
+            "previous_attempts": previous_attempts,
+        }
+    )
+    queue._persist_job(job)
+
+
 def install_queue_persistence_v2(app: FastAPI) -> None:
     settings = getattr(app.state, "settings", None)
     if settings is not None and hasattr(app.state.queue, "configure_runtime"):
@@ -43,7 +63,7 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
         if scheduled:
             app.state.logger.info("Recovered and scheduled %s persisted queue jobs", len(scheduled))
 
-    app.add_event_handler("startup", startup_queue_recovery)
+    app.router.add_event_handler("startup", startup_queue_recovery)
 
     @app.get("/queue/v2/runtime")
     def queue_runtime_v2():
@@ -84,6 +104,8 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
                     "detail": {"job_id": job_id, "attempts": job.attempts, "max_attempts": app.state.queue.max_attempts},
                 },
             )
+        if force and job.status == "queued":
+            _prepare_forced_retry(app.state.queue, job)
         scheduled = app.state.queue.schedule(job_id, app.state.agent.run_task) if job.status == "queued" else False
         return {
             "status": "ok",
