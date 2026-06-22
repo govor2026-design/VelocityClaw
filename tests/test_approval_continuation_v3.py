@@ -1,6 +1,5 @@
+import asyncio
 import json
-
-import pytest
 
 from velocity_claw.core.approval_continuation import continue_after_approval
 
@@ -16,7 +15,7 @@ class Memory:
                     "id": 1,
                     "title": "Run shell",
                     "tool": "shell.run",
-                    "args": {"command": "rm -rf /"},
+                    "args": {"command": "echo blocked"},
                     "status": "approved",
                     "result": {"decision": "approved"},
                     "error": None,
@@ -34,7 +33,7 @@ class Memory:
                                     "id": 1,
                                     "title": "Run shell",
                                     "tool": "shell.run",
-                                    "args": {"command": "rm -rf /"},
+                                    "args": {"command": "echo blocked"},
                                 }
                             ]
                         }
@@ -109,11 +108,10 @@ class Agent:
         pass
 
 
-@pytest.mark.asyncio
-async def test_continuation_rechecks_profile_policy_before_executor():
+def test_continuation_rechecks_profile_policy_before_executor():
     agent = Agent()
 
-    result = await continue_after_approval(agent, "run-policy", 1)
+    result = asyncio.run(continue_after_approval(agent, "run-policy", 1))
 
     assert result["status"] == "failed"
     assert result["reason"] == "policy_validation_failed"
