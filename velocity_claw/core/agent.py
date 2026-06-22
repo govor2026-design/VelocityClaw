@@ -8,6 +8,7 @@ from velocity_claw.planner.planner import Planner
 from velocity_claw.executor.executor import Executor
 from velocity_claw.models.router import ModelRouter
 from velocity_claw.memory.store import MemoryStore
+from velocity_claw.memory.context_v2 import ProjectContextV2
 from velocity_claw.security.policy import SecurityManager
 from velocity_claw.security.access import ExecutionProfileManager, ApprovalManager
 from velocity_claw.core.auto_fix import AutoFixLoop
@@ -22,6 +23,7 @@ class VelocityClawAgent:
         self.planner = Planner(self.router, self.logger)
         self.executor = Executor(self.router, self.logger, settings)
         self.memory = MemoryStore(settings)
+        self.project_context = ProjectContextV2(self.memory)
         self.security = SecurityManager(settings)
         self.profile_manager = ExecutionProfileManager(settings)
         self.approvals = ApprovalManager(settings)
@@ -36,14 +38,53 @@ class VelocityClawAgent:
             return "workspace_write"
         return "read_only"
 
-    def _build_planning_context(self, context: Optional[Dict]) -> Dict:
+    def _build_planning_context(self, context: Optional[Dict], task: str = "") -> Dict:
         merged = dict(context or {})
         merged.setdefault("project_root", self.settings.workspace_root)
+        remembered_keys = self.project_context.ingest_context(merged)
         planning_context = self.memory.build_planning_context()
+        project_memory_v2 = self.project_context.build(task, limit=5)
+        related_runs = [
+            item
+            for item in (project_memory_v2.get("related_runs") or [])
+            if item.get("status") not in {"running", "resuming_after_approval"}
+        ]
+        project_memory_v2["related_runs"] = related_runs
+        project_memory_v2["prior_successes"] = [item for item in related_runs if item.get("status") == "completed"]
+        project_memory_v2["prior_failures"] = [item for item in related_runs if item.get("status") == "failed"]
+        signals = dict(project_memory_v2.get("planning_signals") or {})
+        signals["related_run_count"] = len(related_runs)
+        signals["reuse_prior_success"] = bool(project_memory_v2["prior_successes"])
+        signals["inspect_before_edit"] = bool(project_memory_v2["prior_failures"])
+        project_memory_v2["planning_signals"] = signals
+        planning_context["project_memory_v2"] = project_memory_v2
+
+        structured_facts = {
+            f"knowledge.{entry['key']}": entry.get("value")
+            for entry in project_memory_v2.get("reusable_knowledge", [])
+            if entry.get("key")
+        }
+        planning_context["project_facts"] = {
+            **(planning_context.get("project_facts") or {}),
+            **structured_facts,
+        }
+        reusable_notes = project_memory_v2.get("reusable_notes") or []
+        if reusable_notes:
+            planning_context["recent_notes"] = reusable_notes
+        if related_runs:
+            planning_context["recent_run_tasks"] = [item.get("task") for item in related_runs if item.get("task")]
+            planning_context["recent_failed_tasks"] = [
+                item.get("task")
+                for item in related_runs
+                if item.get("task") and item.get("status") == "failed"
+            ]
+        planning_context["memory_signals_v2"] = signals
+        if remembered_keys:
+            planning_context["knowledge_ingested"] = remembered_keys
 
         recent_runs = self.memory.list_recent_runs(limit=10)
         recent_failed_runs = [item for item in recent_runs if item.get("status") == "failed"]
-        repeated_failed_tasks = [task for task, count in Counter(item.get("task") for item in recent_failed_runs).items() if task and count > 1]
+        repeated_failed_tasks = [task_name for task_name, count in Counter(item.get("task") for item in recent_failed_runs).items() if task_name and count > 1]
         approvals_pending = self.memory.list_pending_approvals()
         last_failed = self.memory.get_last_failed_run()
 
@@ -84,7 +125,8 @@ class VelocityClawAgent:
                 "artifact_overview": report.get("artifact_overview"),
                 "step_overview": report.get("step_overview"),
                 "recommended_strategy": self._build_retry_strategy(run),
-            }
+            },
+            "project_memory_v2": self.project_context.build(run.get("task") or "", limit=5),
         }
 
     async def retry_run(self, run_id: str) -> Dict:
@@ -123,8 +165,10 @@ class VelocityClawAgent:
         self.memory.save_project_note("task", task)
         try:
             self.logger.info("Run %s: Planning", run_id)
-            planning_context = self._build_planning_context(context)
+            planning_context = self._build_planning_context(context, task)
+            project_memory_v2 = planning_context.get("planning_context", {}).get("project_memory_v2", {})
             resume_context = self.memory.build_resume_context(task)
+            resume_context["project_memory_v2"] = project_memory_v2
             plan = await self.planner.create_plan(task, planning_context)
             self.memory.save_artifact(run_id, "run_plan", json.dumps(plan, ensure_ascii=False), artifact_type="plan")
             self.memory.save_artifact(run_id, "planning_context", json.dumps(planning_context, ensure_ascii=False), artifact_type="planning_context")
@@ -271,11 +315,24 @@ class VelocityClawAgent:
     def get_approval_history(self, run_id: str):
         return self.memory.load_approval_history(run_id)
 
-    def get_repo_context_summary(self) -> dict:
-        return self.memory.build_repo_context_summary()
+    def get_repo_context_summary(self, task: str = "") -> dict:
+        summary = self.memory.build_repo_context_summary()
+        summary["project_memory_v2"] = self.project_context.build(task, limit=10)
+        return summary
 
     def get_resume_context(self, task: str) -> dict:
-        return self.memory.build_resume_context(task)
+        context = self.memory.build_resume_context(task)
+        context["project_memory_v2"] = self.project_context.build(task, limit=5)
+        return context
+
+    def remember_project_knowledge(self, key: str, value, *, category: str = "fact", source: str = "operator", confidence: float = 1.0) -> dict:
+        return self.project_context.remember(key, value, category=category, source=source, confidence=confidence)
+
+    def list_project_knowledge(self, *, limit: int = 50, category: str | None = None) -> list[dict]:
+        return self.project_context.list(limit=limit, category=category)
+
+    def forget_project_knowledge(self, key: str) -> bool:
+        return self.project_context.forget(key)
 
     def explain_approval_requirement(self, step: dict, profile_name: Optional[str] = None) -> dict:
         return self.approvals.explain_requirement(step, profile_name)
