@@ -85,6 +85,35 @@ jobs:
           echo "version=${VERSION_VALUE}" >> "${GITHUB_OUTPUT}"
           echo "tag=${EXPECTED_TAG}" >> "${GITHUB_OUTPUT}"
 
+      - name: Inspect existing tag and release
+        id: state
+        env:
+          TAG_VALUE: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          TAG_SHA=""
+          if git show-ref --verify --quiet "refs/tags/${TAG_VALUE}"; then
+            TAG_SHA="$(git rev-list -n 1 "${TAG_VALUE}")"
+          fi
+
+          if gh release view "${TAG_VALUE}" >/dev/null 2>&1; then
+            RELEASE_EXISTS="true"
+          else
+            RELEASE_EXISTS="false"
+          fi
+
+          if [[ -n "${TAG_SHA}" && "${TAG_SHA}" != "${GITHUB_SHA}" ]]; then
+            if [[ "${RELEASE_EXISTS}" == "false" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+              echo "Tag ${TAG_VALUE} points to ${TAG_SHA}, but this run uses ${GITHUB_SHA}. Select the tag ref for a manual repair run." >&2
+              exit 1
+            fi
+          fi
+
+          echo "tag_sha=${TAG_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "release_exists=${RELEASE_EXISTS}" >> "${GITHUB_OUTPUT}"
+
       - name: Build Python artifacts
         run: |
           set -euo pipefail
@@ -116,24 +145,31 @@ jobs:
             echo
             echo "- CHANGELOG.md"
             echo "- docs/RELEASE.md"
+            echo "- docs/RELEASE_AUTOMATION.md"
             echo "- docs/DEPLOYMENT.md"
           } > dist/release-summary.md
 
       - name: Publish or update GitHub Release
+        env:
+          RELEASE_EXISTS: ${{ steps.state.outputs.release_exists }}
         run: |
           set -euo pipefail
           TAG_VALUE="${{ steps.release.outputs.tag }}"
           VERSION_VALUE="${{ steps.release.outputs.version }}"
 
-          if gh release view "${TAG_VALUE}" >/dev/null 2>&1; then
-            gh release edit "${TAG_VALUE}" \
-              --title "Velocity Claw ${VERSION_VALUE}" \
-              --notes-file dist/release-notes.md
-            gh release upload "${TAG_VALUE}" \
-              dist/*.whl \
-              dist/*.tar.gz \
-              dist/release-summary.md \
-              --clobber
+          if [[ "${RELEASE_EXISTS}" == "true" ]]; then
+            if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
+              echo "Release ${TAG_VALUE} already exists; automatic runs preserve immutable release assets."
+            else
+              gh release edit "${TAG_VALUE}" \
+                --title "Velocity Claw ${VERSION_VALUE}" \
+                --notes-file dist/release-notes.md
+              gh release upload "${TAG_VALUE}" \
+                dist/*.whl \
+                dist/*.tar.gz \
+                dist/release-summary.md \
+                --clobber
+            fi
           else
             gh release create "${TAG_VALUE}" \
               dist/*.whl \
