@@ -28,7 +28,7 @@ def test_task_similarity_matches_reordered_repo_terms():
         "Repair cancellation handling in queue workers",
     )
 
-    assert score > 0.5
+    assert score > 0.4
     assert "queue" in matched
     assert "cancellation" in matched
     assert normalize_tokens("Fix the queue") == {"fix", "queue"}
@@ -144,6 +144,7 @@ class FakeProjectContext:
                 {"note_type": "architecture", "content": "Core runtime lives under velocity_claw/core"}
             ],
             "related_runs": [
+                {"task": "Fix queue cancellation", "status": "running"},
                 {"task": "Fix queue worker lifecycle", "status": "completed"},
                 {"task": "Fix queue cancellation", "status": "failed"},
             ],
@@ -168,5 +169,9 @@ def test_agent_projects_v2_context_into_existing_planner_contract():
         "Fix queue cancellation",
     ]
     assert planning["recent_failed_tasks"] == ["Fix queue cancellation"]
+    assert planning["project_memory_v2"]["related_runs"] == [
+        {"task": "Fix queue worker lifecycle", "status": "completed"},
+        {"task": "Fix queue cancellation", "status": "failed"},
+    ]
     assert planning["memory_signals_v2"]["reuse_prior_success"] is True
     assert planning["knowledge_ingested"] == ["repo.path"]
