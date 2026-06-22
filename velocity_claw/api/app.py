@@ -25,6 +25,78 @@ def install_version_endpoint(app: FastAPI) -> None:
         return build_version_payload(app.state.settings)
 
 
+def install_queue_persistence_v2(app: FastAPI) -> None:
+    async def startup_queue_recovery() -> None:
+        scheduled = app.state.queue.schedule_pending(app.state.agent.run_task)
+        app.state.queue_startup_schedule = {
+            "scheduled_job_ids": scheduled,
+            "scheduled_count": len(scheduled),
+            "runtime": app.state.queue.runtime_summary(),
+        }
+        if scheduled:
+            app.state.logger.info("Recovered and scheduled %s persisted queue jobs", len(scheduled))
+
+    app.add_event_handler("startup", startup_queue_recovery)
+
+    @app.get("/queue/v2/runtime")
+    def queue_runtime_v2():
+        return {
+            "status": "ok",
+            "queue": app.state.queue.runtime_summary(),
+            "jobs": app.state.queue.list_jobs()[:20],
+        }
+
+    @app.post("/queue/v2/recover")
+    async def queue_recover_v2():
+        scheduled = app.state.queue.schedule_pending(app.state.agent.run_task)
+        return {
+            "status": "ok",
+            "scheduled_job_ids": scheduled,
+            "scheduled_count": len(scheduled),
+            "queue": app.state.queue.runtime_summary(),
+        }
+
+    @app.post("/queue/v2/{job_id}/requeue")
+    async def queue_requeue_v2(job_id: str, force: bool = False):
+        existing = app.state.queue.get(job_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        if existing.status == "completed":
+            raise HTTPException(
+                status_code=409,
+                detail={"status": "failed", "error": "job_not_requeueable", "detail": "Completed jobs cannot be requeued"},
+            )
+
+        job = app.state.queue.requeue(job_id, force=force)
+        if job.status == "failed" and job.terminal_reason == "max_attempts_exhausted" and not force:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "status": "failed",
+                    "error": "max_attempts_exhausted",
+                    "detail": {"job_id": job_id, "attempts": job.attempts, "max_attempts": app.state.queue.max_attempts},
+                },
+            )
+        scheduled = app.state.queue.schedule(job_id, app.state.agent.run_task) if job.status == "queued" else False
+        return {
+            "status": "ok",
+            "job": job.__dict__,
+            "scheduled": scheduled,
+            "queue": app.state.queue.runtime_summary(),
+        }
+
+    @app.post("/queue/v2/{job_id}/cancel")
+    def queue_cancel_v2(job_id: str):
+        job = app.state.queue.cancel(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Job not found"})
+        return {
+            "status": "ok",
+            "job": job.__dict__,
+            "queue": app.state.queue.runtime_summary(),
+        }
+
+
 def install_approval_v2(app: FastAPI) -> None:
     @app.get("/approvals/v2")
     def approval_index_v2(limit: int = 50, risk: str | None = None, tool: str | None = None):
@@ -94,6 +166,7 @@ def install_diagnostics_v2(app: FastAPI) -> None:
             metrics=metrics,
             active_workers=app.state.queue.active_count(),
             max_concurrency=app.state.queue.max_concurrency,
+            queue_runtime=app.state.queue.runtime_summary(),
         )
 
 
@@ -147,6 +220,7 @@ def create_app() -> FastAPI:
     app = create_base_app()
     install_api_error_handlers(app)
     install_version_endpoint(app)
+    install_queue_persistence_v2(app)
     install_approval_v2(app)
     install_run_detail_v2(app)
     install_diagnostics_v2(app)
@@ -154,6 +228,7 @@ def create_app() -> FastAPI:
     install_api_key_auth(app)
     app.state.api_error_handlers_installed = True
     app.state.version_endpoint_installed = True
+    app.state.queue_persistence_v2_installed = True
     app.state.approval_v2_installed = True
     app.state.run_detail_v2_installed = True
     app.state.diagnostics_v2_installed = True
