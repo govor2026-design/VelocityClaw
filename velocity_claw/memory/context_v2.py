@@ -13,6 +13,10 @@ from velocity_claw.memory.context_v2_runtime import (
     normalize_tokens,
     task_similarity,
 )
+from velocity_claw.memory.run_profile_schema import install_run_profile_schema
+from velocity_claw.memory.store import MemoryStore
+
+install_run_profile_schema(MemoryStore)
 
 __all__ = [
     "ACTIVE_RUN_STATUSES",
