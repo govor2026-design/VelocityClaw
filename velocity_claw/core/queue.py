@@ -64,6 +64,10 @@ class RunQueue:
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
         self._active_jobs: set[str] = set()
         self._scheduled_jobs: set[str] = set()
+        self._job_tasks: dict[str, asyncio.Task] = {}
+        self._active_slots: dict[str, str] = {}
+        self._accepting_work = True
+        self._last_runner: Optional[Runner] = None
         self._startup_recovery_applied = False
         self.startup_recovery: dict[str, Any] = self._empty_recovery_summary()
         if self.db_path:
@@ -88,9 +92,17 @@ class RunQueue:
     def configure_runtime(
         self,
         *,
+        max_concurrency: int | None = None,
         max_attempts: int | None = None,
         recover_on_startup: bool | None = None,
     ) -> dict[str, Any]:
+        if max_concurrency is not None:
+            configured = max(1, int(max_concurrency))
+            if configured != self.max_concurrency:
+                if self._job_tasks or self._active_jobs:
+                    raise RuntimeError("Queue concurrency cannot change while workers are active")
+                self.max_concurrency = configured
+                self._semaphore = asyncio.Semaphore(self.max_concurrency)
         if max_attempts is not None:
             self.max_attempts = max(1, int(max_attempts))
         if recover_on_startup is not None:
@@ -298,14 +310,23 @@ class RunQueue:
     def scheduled_count(self) -> int:
         return len(self._scheduled_jobs)
 
+    def tracked_task_count(self) -> int:
+        return sum(1 for task in self._job_tasks.values() if not task.done())
+
     def runtime_summary(self) -> dict[str, Any]:
         counts: dict[str, int] = {}
         for job in self.jobs.values():
             counts[job.status] = counts.get(job.status, 0) + 1
         return {
+            "orchestrator": "v2",
             "counts": counts,
+            "accepting_work": self._accepting_work,
             "active_workers": self.active_count(),
             "scheduled_workers": self.scheduled_count(),
+            "tracked_tasks": self.tracked_task_count(),
+            "active_slots": dict(sorted(self._active_slots.items(), key=lambda item: item[1])),
+            "available_slots": max(0, self.max_concurrency - self.active_count()),
+            "scheduling_capacity": max(0, self.max_concurrency - self.tracked_task_count()),
             "max_concurrency": self.max_concurrency,
             "max_attempts": self.max_attempts,
             "persistence_enabled": bool(self.db_path),
@@ -313,19 +334,52 @@ class RunQueue:
             "startup_recovery": dict(self.startup_recovery),
         }
 
+    def pause(self) -> dict[str, Any]:
+        self._accepting_work = False
+        return self.runtime_summary()
+
+    def resume(self, runner: Optional[Runner] = None) -> list[str]:
+        self._accepting_work = True
+        if runner is not None:
+            self._last_runner = runner
+        if self._last_runner is None:
+            return []
+        return self.schedule_pending(self._last_runner)
+
+    def _cancel_task(self, task: asyncio.Task) -> None:
+        if task.done():
+            return
+        try:
+            task_loop = task.get_loop()
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+            if current_loop is task_loop:
+                task.cancel()
+            else:
+                task_loop.call_soon_threadsafe(task.cancel)
+        except RuntimeError:
+            pass
+
     def cancel(self, job_id: str) -> Optional[QueueJob]:
         job = self.jobs.get(job_id)
         if not job:
             return None
         if job.status in TERMINAL_STATUSES:
             return job
+        was_running = job.status == "running"
         job.status = "cancelled"
         job.terminal_reason = "cancelled_by_operator"
-        job.worker_slot = None
+        if not was_running:
+            job.worker_slot = None
         job.scheduled_at = None
         job.updated_at = _now()
         self._append_history(job, "cancelled", job.terminal_reason)
         self._persist_job(job)
+        task = self._job_tasks.get(job_id)
+        if task is not None:
+            self._cancel_task(task)
         return job
 
     def requeue(self, job_id: str, *, force: bool = False) -> Optional[QueueJob]:
@@ -355,11 +409,40 @@ class RunQueue:
         self._persist_job(job)
         return job
 
+    def _allocate_worker_slot(self, job_id: str) -> str:
+        used = set(self._active_slots.values())
+        for index in range(1, self.max_concurrency + 1):
+            slot = f"slot-{index}"
+            if slot not in used:
+                self._active_slots[job_id] = slot
+                return slot
+        slot = f"slot-{len(used) + 1}"
+        self._active_slots[job_id] = slot
+        return slot
+
+    def _on_task_done(self, job_id: str, runner: Runner, task: asyncio.Task) -> None:
+        self._job_tasks.pop(job_id, None)
+        self._scheduled_jobs.discard(job_id)
+        job = self.jobs.get(job_id)
+        if job is not None:
+            if task.cancelled() and job.status == "queued":
+                job.status = "cancelled"
+                job.terminal_reason = "worker_task_cancelled_before_start"
+                self._append_history(job, "cancelled", job.terminal_reason)
+            if job.scheduled_at is not None:
+                job.scheduled_at = None
+                job.updated_at = _now()
+            self._persist_job(job)
+        if self._accepting_work:
+            self.schedule_pending(runner)
+
     def schedule(self, job_id: str, runner: Runner) -> bool:
         job = self.jobs.get(job_id)
-        if not job or job.status != "queued":
+        if not self._accepting_work or not job or job.status != "queued":
             return False
-        if job_id in self._scheduled_jobs or job_id in self._active_jobs:
+        if job_id in self._job_tasks or job_id in self._scheduled_jobs or job_id in self._active_jobs:
+            return False
+        if self.tracked_task_count() >= self.max_concurrency:
             return False
         if job.attempts >= self.max_attempts:
             job.status = "failed"
@@ -378,31 +461,31 @@ class RunQueue:
             self._persist_job(job)
             return False
 
+        self._last_runner = runner
         job.scheduled_at = _now()
         job.updated_at = job.scheduled_at
         self._append_history(job, "queued", "worker_task_scheduled")
         self._persist_job(job)
         self._scheduled_jobs.add(job_id)
-        loop.create_task(self._run_scheduled(job_id, runner))
+        task = loop.create_task(self._run_scheduled(job_id, runner), name=f"velocity-claw-job-{job_id}")
+        self._job_tasks[job_id] = task
+        task.add_done_callback(lambda completed, current_job=job_id: self._on_task_done(current_job, runner, completed))
         return True
 
     def schedule_pending(self, runner: Runner) -> list[str]:
-        scheduled = []
+        self._last_runner = runner
+        if not self._accepting_work:
+            return []
+        scheduled: list[str] = []
         for job_id in self.pending_job_ids():
+            if self.tracked_task_count() >= self.max_concurrency:
+                break
             if self.schedule(job_id, runner):
                 scheduled.append(job_id)
         return scheduled
 
     async def _run_scheduled(self, job_id: str, runner: Runner) -> Optional[QueueJob]:
-        try:
-            return await self.run_job(job_id, runner)
-        finally:
-            self._scheduled_jobs.discard(job_id)
-            job = self.jobs.get(job_id)
-            if job and job.scheduled_at is not None:
-                job.scheduled_at = None
-                job.updated_at = _now()
-                self._persist_job(job)
+        return await self.run_job(job_id, runner)
 
     async def run_job(self, job_id: str, runner: Runner) -> Optional[QueueJob]:
         job = self.jobs.get(job_id)
@@ -416,39 +499,89 @@ class RunQueue:
             self._persist_job(job)
             return job
 
-        async with self._semaphore:
-            if job.status != "queued":
-                return job
-            self._active_jobs.add(job.job_id)
-            job.status = "running"
-            job.attempts += 1
-            job.last_attempt_started_at = _now()
-            job.worker_slot = f"slot-{self.active_count()}"
-            job.updated_at = job.last_attempt_started_at
-            self._append_history(job, "running", f"attempt_{job.attempts}_started")
-            self._persist_job(job)
-            try:
-                result = await runner(job.task, job.context)
-                if job.status == "cancelled":
-                    self._append_history(job, "cancelled", "runner_result_discarded_after_cancel")
-                else:
-                    job.result = result
-                    job.status = "completed"
-                    job.error = None
-                    job.terminal_reason = "runner_completed"
-                    self._append_history(job, "completed", job.terminal_reason)
-            except Exception as exc:
-                if job.status == "cancelled":
-                    self._append_history(job, "cancelled", "runner_exception_after_cancel")
-                else:
-                    job.error = str(exc)
-                    job.status = "failed"
-                    job.terminal_reason = "runner_exception"
-                    self._append_history(job, "failed", job.terminal_reason)
-            finally:
-                job.worker_slot = None
-                job.scheduled_at = None
-                job.updated_at = _now()
-                self._active_jobs.discard(job.job_id)
+        try:
+            async with self._semaphore:
+                if job.status != "queued":
+                    return job
+                self._active_jobs.add(job.job_id)
+                job.status = "running"
+                job.attempts += 1
+                job.last_attempt_started_at = _now()
+                job.worker_slot = self._allocate_worker_slot(job.job_id)
+                job.updated_at = job.last_attempt_started_at
+                self._append_history(job, "running", f"attempt_{job.attempts}_started")
                 self._persist_job(job)
+                try:
+                    result = await runner(job.task, job.context)
+                    if job.status == "cancelled":
+                        self._append_history(job, "cancelled", "runner_result_discarded_after_cancel")
+                    else:
+                        job.result = result
+                        job.status = "completed"
+                        job.error = None
+                        job.terminal_reason = "runner_completed"
+                        self._append_history(job, "completed", job.terminal_reason)
+                except asyncio.CancelledError:
+                    if job.status != "cancelled":
+                        job.status = "cancelled"
+                        job.terminal_reason = "worker_task_cancelled"
+                    self._append_history(job, "cancelled", "runner_task_cancelled")
+                except Exception as exc:
+                    if job.status == "cancelled":
+                        self._append_history(job, "cancelled", "runner_exception_after_cancel")
+                    else:
+                        job.error = str(exc)
+                        job.status = "failed"
+                        job.terminal_reason = "runner_exception"
+                        self._append_history(job, "failed", job.terminal_reason)
+                finally:
+                    job.worker_slot = None
+                    job.scheduled_at = None
+                    job.updated_at = _now()
+                    self._active_slots.pop(job.job_id, None)
+                    self._active_jobs.discard(job.job_id)
+                    self._persist_job(job)
+                return job
+        except asyncio.CancelledError:
+            if job.status != "cancelled":
+                job.status = "cancelled"
+                job.terminal_reason = "worker_task_cancelled_before_start"
+            job.worker_slot = None
+            job.scheduled_at = None
+            job.updated_at = _now()
+            self._active_slots.pop(job.job_id, None)
+            self._active_jobs.discard(job.job_id)
+            self._append_history(job, "cancelled", job.terminal_reason)
+            self._persist_job(job)
             return job
+
+    async def drain(self, timeout_seconds: float = 10.0) -> dict[str, Any]:
+        self._accepting_work = False
+        tasks = [task for task in self._job_tasks.values() if not task.done()]
+        if not tasks:
+            return {"status": "drained", "timed_out": False, "pending_tasks": 0, "queue": self.runtime_summary()}
+        _, pending = await asyncio.wait(tasks, timeout=max(0.0, float(timeout_seconds)))
+        return {
+            "status": "timeout" if pending else "drained",
+            "timed_out": bool(pending),
+            "pending_tasks": len(pending),
+            "queue": self.runtime_summary(),
+        }
+
+    async def shutdown(self, timeout_seconds: float = 10.0, *, cancel_running: bool = True) -> dict[str, Any]:
+        self._accepting_work = False
+        tasks = [task for task in self._job_tasks.values() if not task.done()]
+        if cancel_running:
+            for job_id in list(self._job_tasks):
+                self.cancel(job_id)
+        if tasks:
+            _, pending = await asyncio.wait(tasks, timeout=max(0.0, float(timeout_seconds)))
+        else:
+            pending = set()
+        return {
+            "status": "timeout" if pending else "stopped",
+            "timed_out": bool(pending),
+            "pending_tasks": len(pending),
+            "cancel_running": cancel_running,
+            "queue": self.runtime_summary(),
+        }
