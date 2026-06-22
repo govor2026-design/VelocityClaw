@@ -16,6 +16,7 @@ def test_api_doc_lists_v2_operator_endpoints():
         "/diagnostics/v2",
         "/runs/{run_id}/detail/v2",
         "/runs/{run_id}/artifacts/v2",
+        "/approvals/v2",
         "/approvals/v2/{run_id}/{step_id}",
         "/approvals/v2/{run_id}/{step_id}/approve",
         "/approvals/v2/{run_id}/{step_id}/reject",
@@ -23,6 +24,10 @@ def test_api_doc_lists_v2_operator_endpoints():
     ]
     for endpoint in required:
         assert endpoint in content
+
+    assert "GET | `/approvals/v2`" in content
+    assert "?risk=high" in content
+    assert "?tool=shell.run" in content
 
 
 def test_api_doc_documents_auth_headers_and_error_behavior():
