@@ -60,6 +60,8 @@ class RepoKnowledgeIndex:
     def related_runs(self, task: str, limit: int = 5, min_score: float = 0.18) -> list[dict[str, Any]]:
         ranked: list[tuple[float, dict[str, Any]]] = []
         for summary in self.memory.list_recent_runs(limit=100):
+            if summary.get("status") == "running":
+                continue
             score = similarity(task, summary.get("task") or "")
             if score < min_score:
                 continue
@@ -133,8 +135,9 @@ def install_repo_aware_memory_v2(memory_cls: type) -> None:
 
     def build_planning_context(self, limit: int = 5, task: str | None = None):
         payload = original_planning(self, limit=limit)
-        if task:
-            payload.update(RepoKnowledgeIndex(self).build_planning_context(task, limit=limit))
+        current_task = task or self.load_project_fact("last_task")
+        if current_task:
+            payload.update(RepoKnowledgeIndex(self).build_planning_context(str(current_task), limit=limit))
         else:
             payload["project_knowledge"] = RepoKnowledgeIndex(self).build_project_knowledge(limit=max(limit, 5))
             payload["avoid_rediscovery"] = bool(payload["project_knowledge"]["facts"] or payload["project_knowledge"]["reusable_notes"])
