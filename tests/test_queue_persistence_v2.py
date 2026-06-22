@@ -140,7 +140,7 @@ def test_cancelled_running_job_is_not_overwritten_by_runner_result():
     assert final.status == "cancelled"
     assert final.result is None
     assert final.terminal_reason == "cancelled_by_operator"
-    assert any(event["reason"] == "runner_result_discarded_after_cancel" for event in final.history)
+    assert any(event["reason"] == "runner_task_cancelled" for event in final.history)
 
 
 def test_requeue_blocks_exhausted_attempts_unless_forced():
@@ -171,6 +171,9 @@ class FakeAgent:
 
 class FakeLogger:
     def info(self, *args, **kwargs):
+        pass
+
+    def warning(self, *args, **kwargs):
         pass
 
 
