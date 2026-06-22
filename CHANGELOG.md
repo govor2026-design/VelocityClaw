@@ -2,6 +2,29 @@
 
 All notable changes to Velocity Claw are tracked here.
 
+## 0.2.4 - 2026-06-22
+
+### Added
+
+- Added automated GitHub Release publication after validated version changes reach `master`.
+- Added release-note generation from the matching `CHANGELOG.md` section.
+- Added release artifacts containing the Python wheel, source distribution, validation summary, and generated notes.
+- Added release automation, bootstrap, and changelog-extraction contract tests.
+- Added operator documentation for automatic publication and manual repair runs.
+
+### Changed
+
+- Release publication now validates package metadata, runs the full test suite, audits dependencies, and builds distributions before creating a tag.
+- Automatic reruns preserve existing release assets instead of overwriting them.
+- Manual release repair remains available through guarded `workflow_dispatch` runs with strict tag-to-version validation.
+- Package metadata is synchronized on version `0.2.4` while retaining authors, keywords, classifiers, console entry point, and package discovery settings.
+
+### Fixed
+
+- Fixed manual release tag handling by passing workflow input through an environment variable before shell evaluation.
+- Fixed release notes that previously lacked version-specific changes when no matching changelog section existed.
+- Documented and tested the one-time bootstrap sequence required after installing a new release workflow trigger.
+
 ## 0.2.3 - 2026-06-22
 
 ### Security
