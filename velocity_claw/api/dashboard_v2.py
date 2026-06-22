@@ -22,6 +22,7 @@ def number_card(label: str, value: Any) -> str:
 def run_links(run_id: Any) -> str:
     safe_run_id = html_escape(run_id)
     return (
+        f"<a href='/dashboard/v2/runs?run_id={safe_run_id}'>inspect</a> · "
         f"<a href='/runs/{safe_run_id}/detail/v2'>detail v2</a> · "
         f"<a href='/runs/{safe_run_id}/artifacts/v2'>artifacts</a> · "
         f"<a href='/runs/{safe_run_id}/forensics'>forensics</a> · "
@@ -203,6 +204,7 @@ def render_dashboard_v2(
       <div class='nav'>
         <a href='/version'>version</a>
         <a href='/dashboard'>classic dashboard</a>
+        <a href='/dashboard/v2/runs'>runs inspector</a>
         <a href='/diagnostics/v2'>diagnostics v2</a>
         <a href='/ops/console'>ops console</a>
         <a href='/runs'>runs json</a>
