@@ -115,3 +115,46 @@ class RepoKnowledgeIndex:
             "recent_trace": self.trace_notes(limit=limit),
             "reuse_hint": "Reuse saved facts, decisions, constraints, and successful prior findings before repeating repository inspection.",
         }
+
+
+def install_repo_aware_memory_v2(memory_cls: type) -> None:
+    if getattr(memory_cls, "_repo_aware_v2_installed", False):
+        return
+
+    original_repo_summary = memory_cls.build_repo_context_summary
+    original_planning = memory_cls.build_planning_context
+    original_resume = memory_cls.build_resume_context
+
+    def build_repo_context_summary(self, limit: int = 5):
+        payload = original_repo_summary(self, limit=limit)
+        payload["project_knowledge_v2"] = RepoKnowledgeIndex(self).build_project_knowledge(limit=max(limit, 5))
+        payload["memory_model"] = "repo-aware-v2"
+        return payload
+
+    def build_planning_context(self, limit: int = 5, task: str | None = None):
+        payload = original_planning(self, limit=limit)
+        if task:
+            payload.update(RepoKnowledgeIndex(self).build_planning_context(task, limit=limit))
+        else:
+            payload["project_knowledge"] = RepoKnowledgeIndex(self).build_project_knowledge(limit=max(limit, 5))
+            payload["avoid_rediscovery"] = bool(payload["project_knowledge"]["facts"] or payload["project_knowledge"]["reusable_notes"])
+        payload["memory_model"] = "repo-aware-v2"
+        return payload
+
+    def build_resume_context(self, task: str, limit: int = 5):
+        payload = original_resume(self, task, limit=limit)
+        payload.update(RepoKnowledgeIndex(self).build_resume_context(task, limit=limit))
+        payload["memory_model"] = "repo-aware-v2"
+        return payload
+
+    def save_reusable_knowledge(self, knowledge_type: str, content: str):
+        note_type = str(knowledge_type or "knowledge").strip().lower()
+        if note_type not in REUSABLE_NOTE_TYPES and not note_type.startswith("knowledge:"):
+            note_type = f"knowledge:{note_type}"
+        self.save_project_note(note_type, str(content).strip())
+
+    memory_cls.build_repo_context_summary = build_repo_context_summary
+    memory_cls.build_planning_context = build_planning_context
+    memory_cls.build_resume_context = build_resume_context
+    memory_cls.save_reusable_knowledge = save_reusable_knowledge
+    memory_cls._repo_aware_v2_installed = True
