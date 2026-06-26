@@ -4,7 +4,16 @@ from dataclasses import asdict, dataclass
 from typing import Optional
 
 from velocity_claw.config.settings import Settings
-from velocity_claw.security.profile_explain import explain_tool_access as build_tool_access_explanation
+from velocity_claw.security.profile_explain import (
+    classify_tool,
+    explain_tool_access as build_tool_access_explanation,
+)
+from velocity_claw.security.profile_policy_v2 import (
+    APPROVAL,
+    evaluate_tool_policy,
+    get_tool_mode,
+    profile_mode_summary,
+)
 
 
 class AccessControl:
@@ -43,7 +52,7 @@ class ExecutionProfileManager:
                 git_write=False,
                 network=False,
                 approval_workflow=True,
-                description="Restrictive profile for safe inspection and tightly controlled actions.",
+                description="Inspection-first profile. Read and test tools are allowed; mutation, shell, git write, and network tools are hard denied.",
             ),
             "dev": ExecutionProfile(
                 "dev",
@@ -54,7 +63,7 @@ class ExecutionProfileManager:
                 git_write=False,
                 network=False,
                 approval_workflow=True,
-                description="Development-focused profile with editing, testing, and limited shell workflows.",
+                description="Development profile. Workspace edits and tests are allowed, shell requires approval, git write and network remain denied.",
             ),
             "owner": ExecutionProfile(
                 "owner",
@@ -65,19 +74,36 @@ class ExecutionProfileManager:
                 git_write=True,
                 network=True,
                 approval_workflow=True,
-                description="Expanded trusted profile with broader tool access and auditability.",
+                description="Owner profile. All registered tools are available; explicit approval requests remain enforceable and all actions stay audited.",
             ),
         }
 
     def get_profile(self, name: Optional[str] = None) -> ExecutionProfile:
-        key = name or self.settings.execution_profile
+        key = (name or self.settings.execution_profile or "safe").strip().lower()
         return self._profiles.get(key, self._profiles["safe"])
 
     def list_profiles(self) -> dict:
-        return {name: asdict(profile) for name, profile in self._profiles.items()}
+        profiles = {}
+        for name, profile in self._profiles.items():
+            payload = asdict(profile)
+            payload["policy"] = profile_mode_summary(name)
+            profiles[name] = payload
+        return profiles
+
+    def _runtime_block_reason(self, tool: str) -> str | None:
+        if tool == "shell.run" and not self.settings.shell_enabled:
+            return "Shell execution is disabled by runtime setting SHELL_ENABLED=false."
+        if tool in {"git.run", "git.inspect"} and not self.settings.git_enabled:
+            return "Git execution is disabled by runtime setting GIT_ENABLED=false."
+        return None
 
     def get_capability_matrix(self, profile_name: Optional[str] = None) -> dict:
         profile = self.get_profile(profile_name)
+        policy = profile_mode_summary(profile.name)
+        policy["effective_tools"] = {
+            tool: self.evaluate_tool(tool, profile.name)
+            for tool in policy["tool_modes"]
+        }
         return {
             "profile": profile.name,
             "description": profile.description,
@@ -90,28 +116,53 @@ class ExecutionProfileManager:
                 "network": profile.network,
                 "approval_workflow": profile.approval_workflow,
             },
+            "runtime_constraints": {
+                "shell_enabled": self.settings.shell_enabled,
+                "git_enabled": self.settings.git_enabled,
+                "dry_run": self.settings.dry_run,
+                "allowed_hosts": list(self.settings.allowed_hosts),
+            },
+            "policy": policy,
         }
 
-    def is_tool_allowed(self, tool: str, profile_name: Optional[str] = None) -> bool:
+    def get_tool_mode(self, tool: str, profile_name: Optional[str] = None) -> str:
         profile = self.get_profile(profile_name)
-        if tool in {"fs.write", "fs.append", "fs.replace"}:
-            return profile.filesystem_write
-        if tool in {"patch.apply", "patch.preview"}:
-            return profile.patch_engine
-        if tool == "test.run":
-            return profile.test_runner
-        if tool == "shell.run":
-            return profile.shell
-        if tool in {"git.run", "git.inspect"}:
-            return profile.git_write or tool == "git.inspect"
-        if tool in {"http.get", "http.post"}:
-            return profile.network
-        return True
+        return get_tool_mode(profile.name, tool)
+
+    def evaluate_tool(
+        self,
+        tool: str,
+        profile_name: Optional[str] = None,
+        *,
+        approved: bool = False,
+        explicit_approval: bool = False,
+    ) -> dict:
+        profile = self.get_profile(profile_name)
+        decision = evaluate_tool_policy(
+            profile_name=profile.name,
+            tool=tool,
+            approved=approved,
+            explicit_approval=explicit_approval,
+        )
+        decision["profile_blocked"] = decision["blocked"]
+        decision["runtime_blocked"] = False
+        runtime_reason = self._runtime_block_reason(tool)
+        if runtime_reason and not decision["profile_blocked"]:
+            decision["blocked"] = True
+            decision["runtime_blocked"] = True
+            decision["requires_approval"] = False
+            decision["allowed_now"] = False
+            decision["reason"] = runtime_reason
+        decision["classification"] = classify_tool(tool)
+        return decision
+
+    def is_tool_allowed(self, tool: str, profile_name: Optional[str] = None) -> bool:
+        return bool(self.evaluate_tool(tool, profile_name)["granted"])
 
     def explain_tool_access(self, tool: str, profile_name: Optional[str] = None) -> dict:
         profile = self.get_profile(profile_name)
-        allowed = self.is_tool_allowed(tool, profile.name)
-        return build_tool_access_explanation(profile, tool, allowed)
+        policy = self.evaluate_tool(tool, profile.name)
+        return build_tool_access_explanation(profile, tool, policy["granted"], policy=policy)
 
 
 class ApprovalManager:
@@ -120,55 +171,52 @@ class ApprovalManager:
         self.profile_manager = ExecutionProfileManager(settings)
 
     def requires_approval(self, step: dict, profile_name: Optional[str] = None) -> bool:
-        decision = self.explain_requirement(step, profile_name)
-        return decision["required"]
+        return bool(self.explain_requirement(step, profile_name)["required"])
 
     def explain_requirement(self, step: dict, profile_name: Optional[str] = None) -> dict:
         profile = self.profile_manager.get_profile(profile_name)
-        tool = step.get("tool")
-        args = step.get("args", {})
-        triggers = []
-        risk_level = "low"
+        tool = step.get("tool") or ""
+        args = step.get("args", {}) or {}
+        explicit = args.get("require_approval") is True
+        policy = self.profile_manager.evaluate_tool(
+            tool,
+            profile.name,
+            approved=False,
+            explicit_approval=explicit,
+        )
+        classification = policy["classification"]
+        triggers: list[str] = []
+        if not policy["blocked"]:
+            if policy["mode"] == APPROVAL:
+                triggers.append(f"{profile.name}_profile_approval_mode")
+            if explicit:
+                triggers.append("explicit_require_approval")
 
-        if args.get("require_approval") is True:
-            triggers.append("explicit_require_approval")
-            risk_level = "high"
-
-        if profile.approval_workflow:
-            if profile.name == "safe" and tool in {"patch.apply", "shell.run", "git.run", "fs.write", "fs.append", "fs.replace"}:
-                triggers.append("safe_profile_sensitive_write_or_exec")
-                risk_level = "high"
-            elif profile.name == "dev" and tool in {"git.run", "shell.run"}:
-                triggers.append("dev_profile_exec_or_git_write")
-                risk_level = "medium"
-            elif profile.name == "owner" and tool in {"shell.run", "git.run"} and args.get("require_approval") is True:
-                triggers.append("owner_profile_explicit_approval")
-                risk_level = "medium"
-
-        path = args.get("path") or args.get("cwd")
-        command = args.get("command")
+        required = bool(policy["requires_approval"] and not policy["blocked"])
+        blocked = bool(policy["blocked"])
+        risk_level = "high" if blocked else classification.get("risk_level") or "unknown"
         summary = {
             "tool": tool,
-            "path": path,
-            "command": command,
+            "path": args.get("path") or args.get("cwd"),
+            "command": args.get("command"),
         }
-        required = bool(triggers)
-        next_step_hint = self._build_next_step_hint(tool, summary)
-        operator_hint = self._build_operator_hint(required, risk_level, tool)
-        recommended_action = self._build_recommended_action(required, risk_level)
-        approval_label = self._build_approval_label(required, risk_level, tool)
         return {
             "required": required,
+            "blocked": blocked,
+            "profile_blocked": policy.get("profile_blocked", blocked),
+            "runtime_blocked": policy.get("runtime_blocked", False),
+            "allowed_now": policy["allowed_now"],
             "profile": profile.name,
             "tool": tool,
-            "risk_level": risk_level if required else "low",
+            "policy_mode": policy["mode"],
+            "risk_level": risk_level if (required or blocked) else "low",
             "triggers": triggers,
             "summary": summary,
-            "reason": self._build_reason(profile.name, tool, triggers),
-            "recommended_action": recommended_action,
-            "operator_hint": operator_hint,
-            "next_step_hint": next_step_hint,
-            "approval_label": approval_label,
+            "reason": policy["reason"],
+            "recommended_action": self._build_recommended_action(required, blocked, risk_level),
+            "operator_hint": self._build_operator_hint(required, blocked, risk_level, tool),
+            "next_step_hint": self._build_next_step_hint(tool, summary, blocked=blocked),
+            "approval_label": self._build_approval_label(required, blocked, risk_level, tool),
         }
 
     def build_record(self, step: dict, reason: str | None = None, profile_name: Optional[str] = None) -> dict:
@@ -176,46 +224,31 @@ class ApprovalManager:
         if reason:
             explanation["reason"] = reason
         return {
-            "required": explanation["required"],
-            "reason": explanation["reason"],
+            **explanation,
             "decision": None,
             "decided_by": None,
             "decided_at": None,
-            "profile": explanation["profile"],
-            "tool": explanation["tool"],
-            "risk_level": explanation["risk_level"],
-            "triggers": explanation["triggers"],
-            "summary": explanation["summary"],
-            "recommended_action": explanation["recommended_action"],
-            "operator_hint": explanation["operator_hint"],
-            "next_step_hint": explanation["next_step_hint"],
-            "approval_label": explanation["approval_label"],
         }
 
-    def _build_reason(self, profile_name: str, tool: Optional[str], triggers: list[str]) -> str:
-        if not triggers:
-            return "Approval not required."
-        return f"Approval required for tool {tool} under profile {profile_name}: {', '.join(triggers)}"
-
-    def _build_recommended_action(self, required: bool, risk_level: str) -> str:
+    def _build_recommended_action(self, required: bool, blocked: bool, risk_level: str) -> str:
+        if blocked:
+            return "change_profile_or_runtime_then_replan"
         if not required:
             return "continue"
-        if risk_level == "high":
-            return "review_then_approve_or_reject"
-        if risk_level == "medium":
-            return "quick_review"
-        return "continue"
+        return "review_then_approve_or_reject" if risk_level == "high" else "quick_review"
 
-    def _build_operator_hint(self, required: bool, risk_level: str, tool: Optional[str]) -> str:
+    def _build_operator_hint(self, required: bool, blocked: bool, risk_level: str, tool: Optional[str]) -> str:
+        if blocked:
+            return f"{tool} is blocked by profile or runtime policy; approval cannot override the block."
         if not required:
             return "No operator action required."
         if risk_level == "high":
             return f"High-risk approval for {tool}. Review path/command details before approving."
-        if risk_level == "medium":
-            return f"Review {tool} briefly before continuing."
-        return f"Approval gate present for {tool}."
+        return f"Review {tool} before continuing."
 
-    def _build_next_step_hint(self, tool: Optional[str], summary: dict) -> str:
+    def _build_next_step_hint(self, tool: Optional[str], summary: dict, *, blocked: bool = False) -> str:
+        if blocked:
+            return "Replan with an allowed tool or enable an explicitly authorized profile/runtime capability."
         path = summary.get("path")
         command = summary.get("command")
         if tool == "patch.apply" and path:
@@ -228,7 +261,9 @@ class ApprovalManager:
             return f"If approved, execution continues against {path}."
         return "If approved, the paused run will continue to the gated step."
 
-    def _build_approval_label(self, required: bool, risk_level: str, tool: Optional[str]) -> str:
+    def _build_approval_label(self, required: bool, blocked: bool, risk_level: str, tool: Optional[str]) -> str:
+        if blocked:
+            return f"denied:{tool or 'unknown'}"
         if not required:
             return "not_required"
         return f"{risk_level}:{tool or 'unknown'}"
