@@ -1,4 +1,6 @@
+from pathlib import Path
 from typing import Dict, List
+
 from velocity_claw.models.router import ModelRouter
 from velocity_claw.logs.logger import get_logger
 from velocity_claw.tools.fs import FileSystemTool
@@ -75,31 +77,103 @@ class Executor:
                         "result": result,
                         "error": f"test_run_{runner_status or 'failed'}",
                     }
-            return {**base_result, "status": "success", "result": result, "error": None}
+            simulated = isinstance(result, dict) and result.get("status") == "simulated"
+            if simulated:
+                self.logger.info("Dry-run simulated step %s with tool %s", step_id, tool)
+            return {
+                **base_result,
+                "status": "success",
+                "result": result,
+                "error": None,
+                "simulated": simulated,
+            }
         except Exception as e:
             self.logger.error("Step %s failed: %s", step_id, e)
-            return {**base_result, "status": "failed", "result": None, "error": str(e)}
+            return {**base_result, "status": "failed", "result": None, "error": str(e), "simulated": False}
+
+    def _dry_run_enabled(self, args: Dict) -> bool:
+        return bool(self.settings.dry_run or args.get("dry_run") is True)
+
+    def _display_path(self, resolved: Path) -> str:
+        try:
+            return str(resolved.relative_to(self.fs.workspace_root)) or "."
+        except ValueError:
+            return str(resolved)
+
+    def _validate_content_size(self, content: str) -> int:
+        encoded_size = len(str(content).encode("utf-8"))
+        if encoded_size > self.settings.max_file_size:
+            raise ValueError(f"Content too large: {encoded_size}")
+        return encoded_size
+
+    def _simulate_file_action(self, tool: str, args: Dict) -> dict:
+        resolved = self.fs._validate_path(args["path"])
+        before_size = resolved.stat().st_size if resolved.exists() else 0
+
+        if tool == "fs.write":
+            after_size = self._validate_content_size(args["content"])
+        elif tool == "fs.append":
+            append_size = self._validate_content_size(args["content"])
+            after_size = before_size + append_size
+            if after_size > self.settings.max_file_size:
+                raise ValueError("File would exceed size limit")
+        elif tool == "fs.replace":
+            current = self.fs.read(args["path"])
+            old_string = args["old_string"]
+            if old_string not in current:
+                raise ValueError(f"Old string not found in {args['path']}")
+            updated = current.replace(old_string, args["new_string"], 1)
+            after_size = self._validate_content_size(updated)
+        else:
+            raise ValueError(f"Unsupported dry-run file action: {tool}")
+
+        return {
+            "status": "simulated",
+            "dry_run": True,
+            "validated": True,
+            "action": tool,
+            "path": self._display_path(resolved),
+            "exists": resolved.exists(),
+            "bytes_before": before_size,
+            "bytes_after": after_size,
+            "would_change": before_size != after_size or tool == "fs.replace",
+        }
+
+    @staticmethod
+    def _simulated_action(tool: str, **details) -> dict:
+        return {
+            "status": "simulated",
+            "dry_run": True,
+            "validated": True,
+            "action": tool,
+            **details,
+        }
 
     async def _execute_tool(self, tool: str, args: Dict, profile: AccessProfile):
-        dry_run = bool(args.get("dry_run", self.settings.dry_run))
+        dry_run = self._dry_run_enabled(args)
         if tool == "fs.read":
             return self.fs.read(args["path"])
-        if tool == "fs.write":
+        if tool in {"fs.write", "fs.append", "fs.replace"}:
             if dry_run:
-                return {"status": "simulated", "path": args["path"]}
-            return self.fs.write(args["path"], args["content"])
-        if tool == "fs.append":
-            if dry_run:
-                return {"status": "simulated", "path": args["path"]}
-            return self.fs.append(args["path"], args["content"])
-        if tool == "fs.replace":
-            if dry_run:
-                return {"status": "simulated", "path": args["path"]}
+                return self._simulate_file_action(tool, args)
+            if tool == "fs.write":
+                return self.fs.write(args["path"], args["content"])
+            if tool == "fs.append":
+                return self.fs.append(args["path"], args["content"])
             return self.fs.replace(args["path"], args["old_string"], args["new_string"])
         if tool == "patch.preview":
             return self.patch.preview(args["patch"])
         if tool == "patch.apply":
-            return self.patch.apply(args["patch"], dry_run=dry_run)
+            result = self.patch.apply(args["patch"], dry_run=dry_run)
+            if dry_run:
+                return {
+                    "status": "simulated",
+                    "dry_run": True,
+                    "validated": True,
+                    "action": tool,
+                    **result,
+                }
+            return result
         if tool == "code.find_symbol":
             return self.code_nav.find_symbol(args["name"], args.get("kind"))
         if tool == "code.read_symbol":
@@ -120,21 +194,45 @@ class Executor:
             )
         if tool == "shell.run":
             self.security.validate_command(args["command"], profile)
+            if not self.settings.shell_enabled:
+                raise RuntimeError("Shell execution is disabled")
             if dry_run:
-                return {"status": "simulated", "command": args["command"]}
+                argv = self.shell.validate_command(args["command"])
+                cwd = self.shell.validate_cwd(args.get("cwd"))
+                return self._simulated_action(
+                    tool,
+                    command=args["command"],
+                    argv=argv,
+                    cwd=str(cwd),
+                )
             return self.shell.run_command(args["command"], args.get("cwd"), timeout=self.settings.command_timeout)
         if tool == "git.inspect":
             return self.git.inspect_repo(args.get("cwd"), timeout=args.get("timeout", self.settings.command_timeout))
         if tool == "git.run":
             self.security.validate_git_command(args["command"], profile)
+            if not self.settings.git_enabled:
+                raise RuntimeError("Git operations disabled")
             if dry_run:
-                return {"status": "simulated", "command": args["command"]}
+                argv = self.git.validate_git_command(args["command"])
+                cwd = self.git.validate_repo_root(args.get("cwd"))
+                return self._simulated_action(
+                    tool,
+                    command=args["command"],
+                    argv=argv,
+                    cwd=str(cwd),
+                )
             return self.git.run_git_command(args["command"], args.get("cwd"), timeout=self.settings.command_timeout)
         if tool == "http.get":
             self.security.validate_url(args["url"], profile)
             return await self.http.get(args["url"], headers=args.get("headers"), params=args.get("params"))
         if tool == "http.post":
             self.security.validate_url(args["url"], profile)
+            if dry_run:
+                return self._simulated_action(
+                    tool,
+                    url=args["url"],
+                    payload_present=bool(args.get("data")),
+                )
             return await self.http.post(args["url"], args.get("data", {}), headers=args.get("headers"))
         if tool == "analysis":
             response = await self.router.route("analysis", args["prompt"])
@@ -142,5 +240,8 @@ class Executor:
         raise ValueError(f"Unknown tool: {tool}")
 
     def _extract_summary(self, results: List[Dict]) -> str:
-        success = [r for r in results if r["status"] == "success"]
-        return f"Выполнено {len(success)} из {len(results)} шагов." if results else "Нет шагов."
+        success = [result for result in results if result["status"] == "success"]
+        simulated = [result for result in results if result.get("simulated")]
+        if not results:
+            return "Нет шагов."
+        return f"Выполнено {len(success)} из {len(results)} шагов; симулировано {len(simulated)}."
