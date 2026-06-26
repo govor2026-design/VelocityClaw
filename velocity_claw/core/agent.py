@@ -13,6 +13,7 @@ from velocity_claw.security.policy import SecurityManager
 from velocity_claw.security.access import ExecutionProfileManager, ApprovalManager
 from velocity_claw.core.auto_fix import AutoFixLoop
 from velocity_claw.core.modes import build_mode_task, HIGH_LEVEL_MODES
+from velocity_claw.core.step_guard import StepExecutionGuard
 
 
 class VelocityClawAgent:
@@ -27,6 +28,13 @@ class VelocityClawAgent:
         self.security = SecurityManager(settings)
         self.profile_manager = ExecutionProfileManager(settings)
         self.approvals = ApprovalManager(settings)
+        self.step_guard = StepExecutionGuard(
+            profile_manager=self.profile_manager,
+            security=self.security,
+            executor=self.executor,
+            profile_selector=self._get_profile_for_tool,
+            logger=self.logger,
+        )
         self.auto_fix = AutoFixLoop(self.executor.patch, self.executor.test_runner, self.executor.code_nav)
 
     def _get_profile_for_tool(self, tool: str) -> str:
@@ -37,6 +45,12 @@ class VelocityClawAgent:
         if tool in ["fs.write", "fs.append", "fs.replace", "shell.run", "patch.apply", "test.run"]:
             return "workspace_write"
         return "read_only"
+
+    def _profile_for_run(self, run: Dict) -> str:
+        stored = str(run.get("execution_profile") or "").strip().lower()
+        if stored in {"safe", "dev", "owner"}:
+            return stored
+        return self.settings.execution_profile
 
     def _build_planning_context(self, context: Optional[Dict], task: str = "") -> Dict:
         merged = dict(context or {})
@@ -175,64 +189,30 @@ class VelocityClawAgent:
             self.memory.save_artifact(run_id, "resume_context", json.dumps(resume_context, ensure_ascii=False), artifact_type="resume_context")
             self.memory.save_project_note("plan_summary", f"Planned {len(plan.get('steps', []))} steps for task: {task}")
             results = []
+            profile_name = self.settings.execution_profile
             for step in plan["steps"]:
                 step_id = step["id"]
                 self.logger.info("Run %s: Executing step %s", run_id, step_id)
                 started_at = datetime.now().isoformat()
-                profile_name = self.settings.execution_profile
-                if self.approvals.requires_approval(step, profile_name):
-                    return self._pause_for_approval(run_id, task, step, started_at, profile_name, results, boundary_type="initial_pause")
+                outcome = await self.step_guard.execute(
+                    step,
+                    context or {},
+                    profile_name,
+                    approved=False,
+                    started_at=started_at,
+                )
+                if outcome["state"] == "approval_required":
+                    return self._pause_for_approval(
+                        run_id,
+                        task,
+                        step,
+                        started_at,
+                        profile_name,
+                        results,
+                        boundary_type="initial_pause",
+                    )
 
-                if not self.profile_manager.is_tool_allowed(step.get("tool", ""), profile_name):
-                    completed_at = datetime.now().isoformat()
-                    step_result = {
-                        "id": step_id,
-                        "title": step["title"],
-                        "tool": step.get("tool"),
-                        "args": step.get("args", {}),
-                        "status": "failed",
-                        "result": None,
-                        "error": f"Tool {step.get('tool')} is not allowed in profile {profile_name}",
-                        "started_at": started_at,
-                        "completed_at": completed_at,
-                    }
-                    results.append(step_result)
-                    self.memory.save_step(run_id, step_result)
-                    break
-
-                profile = self.security.get_profile(self._get_profile_for_tool(step.get("tool", "")))
-                try:
-                    if step["tool"] == "shell.run":
-                        self.security.validate_command(step["args"].get("command", ""), profile)
-                    elif step["tool"] == "fs.read":
-                        self.security.validate_path(step["args"].get("path", ""), profile, write=False)
-                    elif step["tool"] in ["fs.write", "fs.append", "fs.replace"]:
-                        self.security.validate_path(step["args"].get("path", ""), profile, write=True)
-                    elif step["tool"] in ["http.get", "http.post"]:
-                        self.security.validate_url(step["args"].get("url", ""), profile)
-                    elif step["tool"] == "git.run":
-                        self.security.validate_git_command(step["args"].get("command", ""), profile)
-                except Exception as e:
-                    completed_at = datetime.now().isoformat()
-                    self.logger.error("Run %s: Security validation failed for step %s: %s", run_id, step_id, e)
-                    step_result = {
-                        "id": step_id,
-                        "title": step["title"],
-                        "tool": step.get("tool"),
-                        "args": step.get("args", {}),
-                        "status": "failed",
-                        "result": None,
-                        "error": str(e),
-                        "started_at": started_at,
-                        "completed_at": completed_at,
-                    }
-                    results.append(step_result)
-                    self.memory.save_step(run_id, step_result)
-                    break
-
-                step_result = await self.executor.execute_step(step, context or {})
-                step_result["started_at"] = started_at
-                step_result["completed_at"] = datetime.now().isoformat()
+                step_result = outcome["step_result"]
                 results.append(step_result)
                 self.memory.save_step(run_id, step_result)
                 self._persist_artifacts(run_id, step_result)
@@ -389,20 +369,34 @@ class VelocityClawAgent:
             return {"status": "manual_resume_required", "reason": "step_boundary_missing"}
 
         executed = []
-        profile_name = self.settings.execution_profile
+        profile_name = self._profile_for_run(run)
         for index, step in enumerate(steps[start_index:], start=start_index):
             started_at = datetime.now().isoformat()
-            if index > start_index and self.approvals.requires_approval(step, profile_name):
-                pause = self._pause_for_approval(run_id, run["task"], step, started_at, profile_name, [], boundary_type="continuation_pause")
+            outcome = await self.step_guard.execute(
+                step,
+                {},
+                profile_name,
+                approved=index == start_index,
+                started_at=started_at,
+            )
+            if outcome["state"] == "approval_required":
+                pause = self._pause_for_approval(
+                    run_id,
+                    run["task"],
+                    step,
+                    started_at,
+                    profile_name,
+                    [],
+                    boundary_type="continuation_pause",
+                )
                 return {
                     "status": "awaiting_approval",
                     "boundary_step_id": step.get("id"),
                     "executed": executed,
                     "pause": pause,
                 }
-            result = await self.executor.execute_step(step, {})
-            result["started_at"] = result.get("started_at") or started_at
-            result["completed_at"] = datetime.now().isoformat()
+
+            result = outcome["step_result"]
             self.memory.save_step(run_id, result)
             self._persist_artifacts(run_id, result)
             executed.append(result)
