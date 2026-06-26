@@ -1,3 +1,5 @@
+import asyncio
+
 from velocity_claw.api import approval_v2
 from velocity_claw.api.approval_attempts_v2 import install_latest_step_lookup
 
@@ -25,6 +27,7 @@ def run_with_attempts():
                 "tool": "shell.run",
                 "status": "pending_approval",
                 "result": {"risk_level": "high", "profile": "dev"},
+                "error": None,
                 "attempt_no": 2,
                 "phase": "failed_resume",
             },
@@ -59,3 +62,42 @@ def test_latest_non_pending_attempt_blocks_duplicate_decision():
     assert guard.allowed is False
     assert guard.reason == "already_approved"
     assert guard.current_status == "approved"
+
+
+def test_approval_v2_routes_failed_resume_to_agent_approval_wrapper():
+    class Memory:
+        def __init__(self):
+            self.run = run_with_attempts()
+
+        def load_run(self, run_id):
+            return self.run
+
+    class Agent:
+        def __init__(self):
+            self.memory = Memory()
+            self.calls = []
+
+        async def approve_step(self, run_id, step_id, actor="owner", reason=None):
+            self.calls.append((run_id, step_id, actor, reason))
+            return {
+                "decision": "approved",
+                "resume": {"status": "completed", "run_id": run_id},
+            }
+
+    async def scenario():
+        install_latest_step_lookup(approval_v2)
+        agent = Agent()
+
+        result = await approval_v2.approve_with_guard(
+            agent,
+            "run-1",
+            2,
+            actor="operator",
+            reason="reviewed",
+        )
+
+        assert result["status"] == "ok"
+        assert agent.calls == [("run-1", 2, "operator", "reviewed")]
+        assert result["decision"]["resume"]["status"] == "completed"
+
+    asyncio.run(scenario())
