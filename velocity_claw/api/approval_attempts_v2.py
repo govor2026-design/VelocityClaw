@@ -46,8 +46,6 @@ def install_latest_step_lookup(approval_module: Any) -> None:
             reason=reason,
         )
 
-    # approval_v2 currently resolves this helper from its module globals.
-    setattr(approval_module, "_find_step", find_latest_step)
     setattr(approval_module, LATEST_STEP_LOOKUP, find_latest_step)
     approval_module.approve_and_continue = approve_and_continue_with_latest_step
     setattr(approval_module, INSTALLATION_FLAG, True)
