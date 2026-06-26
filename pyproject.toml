@@ -20,7 +20,7 @@ dependencies = [
   "python-dotenv==1.2.2",
   "python-telegram-bot==22.7",
   "PyYAML==6.0.3",
-  "pydantic==2.13.2",
+  "pydantic==2.13.4",
   "slowapi==0.1.9",
   "limits==5.8.0",
   "openai==2.36.0",
