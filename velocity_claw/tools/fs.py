@@ -1,3 +1,4 @@
+import difflib
 import json
 import os
 import re
@@ -29,6 +30,55 @@ class FileSystemTool:
         if path.exists() and path.stat().st_size > self.settings.max_file_size:
             raise ValueError(f"File too large: {path.stat().st_size} > {self.settings.max_file_size}")
 
+    def _read_existing(self, resolved: Path) -> str:
+        if not resolved.exists():
+            return ""
+        self._check_file_size(resolved)
+        try:
+            with open(resolved, "r", encoding="utf-8") as handle:
+                return handle.read()
+        except UnicodeDecodeError:
+            raise ValueError(f"Binary file detected: {resolved}")
+
+    def _display_path(self, resolved: Path) -> str:
+        try:
+            return str(resolved.relative_to(self.workspace_root))
+        except ValueError:
+            return str(resolved)
+
+    @staticmethod
+    def _make_diff(path: str, before: str, after: str) -> str:
+        return "".join(
+            difflib.unified_diff(
+                before.splitlines(keepends=True),
+                after.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+            )
+        )
+
+    def _write_with_diff(self, path: str, before: str, after: str, action: str) -> dict:
+        resolved = self._validate_path(path)
+        encoded_size = len(after.encode("utf-8"))
+        if encoded_size > self.settings.max_file_size:
+            raise ValueError(f"Content too large: {encoded_size}")
+        display_path = self._display_path(resolved)
+        diff = self._make_diff(display_path, before, after)
+        changed = before != after
+        if changed:
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            with open(resolved, "w", encoding="utf-8") as handle:
+                handle.write(after)
+        return {
+            "status": "completed",
+            "action": action,
+            "path": display_path,
+            "changed": changed,
+            "diff": diff,
+            "bytes_before": len(before.encode("utf-8")),
+            "bytes_after": encoded_size,
+        }
+
     def read(self, path: str) -> str:
         resolved = self._validate_path(path)
         self._check_file_size(resolved)
@@ -41,28 +91,23 @@ class FileSystemTool:
         except UnicodeDecodeError:
             raise ValueError(f"Binary file detected: {resolved}")
 
-    def write(self, path: str, content: str) -> None:
+    def write(self, path: str, content: str) -> dict:
         resolved = self._validate_path(path)
-        if len(content.encode("utf-8")) > self.settings.max_file_size:
-            raise ValueError(f"Content too large: {len(content)}")
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        with open(resolved, "w", encoding="utf-8") as handle:
-            handle.write(content)
+        before = self._read_existing(resolved)
+        return self._write_with_diff(path, before, content, "fs.write")
 
-    def append(self, path: str, content: str) -> None:
+    def append(self, path: str, content: str) -> dict:
         resolved = self._validate_path(path)
-        current_size = resolved.stat().st_size if resolved.exists() else 0
-        if current_size + len(content.encode("utf-8")) > self.settings.max_file_size:
-            raise ValueError("File would exceed size limit")
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        with open(resolved, "a", encoding="utf-8") as handle:
-            handle.write(content)
+        before = self._read_existing(resolved)
+        return self._write_with_diff(path, before, before + content, "fs.append")
 
-    def replace(self, path: str, old_string: str, new_string: str) -> None:
-        content = self.read(path)
-        if old_string not in content:
+    def replace(self, path: str, old_string: str, new_string: str) -> dict:
+        resolved = self._validate_path(path)
+        before = self._read_existing(resolved)
+        if old_string not in before:
             raise ValueError(f"Old string not found in {path}")
-        self.write(path, content.replace(old_string, new_string, 1))
+        after = before.replace(old_string, new_string, 1)
+        return self._write_with_diff(path, before, after, "fs.replace")
 
     def exists(self, path: str) -> bool:
         return self._validate_path(path).exists()
@@ -101,4 +146,4 @@ class FileSystemTool:
         json_str = json.dumps(data, indent=2, ensure_ascii=False)
         if len(json_str.encode("utf-8")) > self.settings.max_file_size:
             raise ValueError("JSON too large")
-        self.write(path, json_str)
+        return self.write(path, json_str)
