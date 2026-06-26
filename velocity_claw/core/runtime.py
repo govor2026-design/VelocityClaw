@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import signal
-import sys
 from dataclasses import dataclass, field
 from types import FrameType
 from typing import Callable, Optional, TypeVar
