@@ -19,7 +19,10 @@ TOOL_CATEGORIES = {
     "http.post": "network_write",
     "code.find_symbol": "code_read",
     "code.read_symbol": "code_read",
+    "code.read_lines": "code_read",
     "code.list_imports": "code_read",
+    "code.find_references": "code_read",
+    "code.find_routes": "code_read",
 }
 
 RISK_BY_CATEGORY = {
