@@ -20,14 +20,29 @@ def effective_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def attempt_summary(steps: list[dict[str, Any]]) -> dict[str, Any]:
-    counts = Counter(str(step.get("id")) for step in steps if step.get("id") is not None)
+    attempt_numbers: dict[str, set[int]] = {}
+    for step in steps:
+        if step.get("id") is None:
+            continue
+        key = str(step.get("id"))
+        try:
+            attempt_no = max(1, int(step.get("attempt_no") or 1))
+        except (TypeError, ValueError):
+            attempt_no = 1
+        attempt_numbers.setdefault(key, set()).add(attempt_no)
+    attempts_by_step = {
+        step_id: len(numbers)
+        for step_id, numbers in attempt_numbers.items()
+    }
     phases = Counter(str(step.get("phase") or "initial") for step in steps)
     latest = effective_steps(steps)
     return {
         "total_attempt_records": len(steps),
         "unique_steps": len(latest),
-        "retried_steps": sorted(step_id for step_id, count in counts.items() if count > 1),
-        "attempts_by_step": dict(counts),
+        "retried_steps": sorted(
+            step_id for step_id, count in attempts_by_step.items() if count > 1
+        ),
+        "attempts_by_step": attempts_by_step,
         "records_by_phase": dict(phases),
     }
 
