@@ -66,6 +66,15 @@ class Executor:
         try:
             profile = self._get_profile(tool)
             result = await self._execute_tool(tool, args, profile)
+            if tool == "test.run" and isinstance(result, dict):
+                runner_status = result.get("status")
+                if runner_status not in {"passed", "simulated"}:
+                    return {
+                        **base_result,
+                        "status": "failed",
+                        "result": result,
+                        "error": f"test_run_{runner_status or 'failed'}",
+                    }
             return {**base_result, "status": "success", "result": result, "error": None}
         except Exception as e:
             self.logger.error("Step %s failed: %s", step_id, e)
@@ -104,6 +113,10 @@ class Executor:
                 timeout=args.get("timeout", self.settings.command_timeout),
                 extra_args=args.get("extra_args"),
                 dry_run=dry_run,
+                keyword=args.get("keyword"),
+                marker=args.get("marker"),
+                nodeid=args.get("nodeid"),
+                cwd=args.get("cwd"),
             )
         if tool == "shell.run":
             self.security.validate_command(args["command"], profile)
