@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
+from datetime import datetime
 from typing import Any
 
 
@@ -138,7 +139,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
                     status,
                     json.dumps(result, ensure_ascii=False) if result is not None else None,
                     error,
-                    __import__("datetime").datetime.now().isoformat(),
+                    datetime.now().isoformat(),
                     run_id,
                     step_id,
                 ),
