@@ -1,7 +1,12 @@
 import asyncio
 
 from velocity_claw.api import approval_v2
-from velocity_claw.api.approval_attempts_v2 import install_latest_step_lookup
+from velocity_claw.api.approval_attempts_v2 import (
+    INSTALLATION_FLAG,
+    LATEST_STEP_LOOKUP,
+    find_latest_step,
+    install_latest_step_lookup,
+)
 
 
 def run_with_attempts():
@@ -37,6 +42,24 @@ def run_with_attempts():
             {"step_id": 2, "decision": "requested"},
         ],
     }
+
+
+def test_find_latest_step_prefers_most_recent_attempt():
+    latest = find_latest_step(run_with_attempts(), 2)
+
+    assert latest["attempt_no"] == 2
+    assert latest["phase"] == "failed_resume"
+
+
+def test_installation_exposes_public_extension_state_and_is_idempotent():
+    install_latest_step_lookup(approval_v2)
+    installed_wrapper = approval_v2.approve_and_continue
+
+    install_latest_step_lookup(approval_v2)
+
+    assert getattr(approval_v2, INSTALLATION_FLAG) is True
+    assert getattr(approval_v2, LATEST_STEP_LOOKUP) is find_latest_step
+    assert approval_v2.approve_and_continue is installed_wrapper
 
 
 def test_approval_guard_uses_latest_attempt_for_retried_step():
