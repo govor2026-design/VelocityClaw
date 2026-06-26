@@ -59,12 +59,7 @@ class Executor:
         tool = step.get("tool")
         args = step.get("args", {})
         self.logger.info("Executing step %s: %s", step_id, title)
-        base_result = {
-            "id": step_id,
-            "title": title,
-            "tool": tool,
-            "args": args,
-        }
+        base_result = {"id": step_id, "title": title, "tool": tool, "args": args}
         try:
             profile = self._get_profile(tool)
             result = await self._execute_tool(tool, args, profile)
@@ -87,9 +82,9 @@ class Executor:
                 "error": None,
                 "simulated": simulated,
             }
-        except Exception as e:
-            self.logger.error("Step %s failed: %s", step_id, e)
-            return {**base_result, "status": "failed", "result": None, "error": str(e), "simulated": False}
+        except Exception as exc:
+            self.logger.exception("Step %s failed: %s", step_id, exc)
+            return {**base_result, "status": "failed", "result": None, "error": str(exc), "simulated": False}
 
     def _dry_run_enabled(self, args: Dict) -> bool:
         return bool(self.settings.dry_run or args.get("dry_run") is True)
@@ -107,7 +102,7 @@ class Executor:
         return encoded_size
 
     def _simulate_file_action(self, tool: str, args: Dict) -> dict:
-        resolved = self.fs._validate_path(args["path"])
+        resolved = self.fs.validate_path(args["path"])
         before_size = resolved.stat().st_size if resolved.exists() else 0
 
         if tool == "fs.write":
@@ -166,39 +161,20 @@ class Executor:
         if tool == "patch.apply":
             result = self.patch.apply(args["patch"], dry_run=dry_run)
             if dry_run:
-                return {
-                    "status": "simulated",
-                    "dry_run": True,
-                    "validated": True,
-                    "action": tool,
-                    **result,
-                }
+                return {"status": "simulated", "dry_run": True, "validated": True, "action": tool, **result}
             return result
         if tool == "code.find_symbol":
             return self.code_nav.find_symbol(args["name"], args.get("kind"))
         if tool == "code.read_symbol":
             return self.code_nav.read_symbol(args["path"], args["name"], args["kind"])
         if tool == "code.read_lines":
-            return self.code_nav.read_lines(
-                args["path"],
-                args["start_line"],
-                args["end_line"],
-                args.get("context_lines", 0),
-            )
+            return self.code_nav.read_lines(args["path"], args["start_line"], args["end_line"], args.get("context_lines", 0))
         if tool == "code.list_imports":
             return self.code_nav.list_imports(args["path"])
         if tool == "code.find_references":
-            return self.code_nav.find_references(
-                args["name"],
-                path=args.get("path"),
-                limit=args.get("limit", 200),
-            )
+            return self.code_nav.find_references(args["name"], path=args.get("path"), limit=args.get("limit", 200))
         if tool == "code.find_routes":
-            return self.code_nav.find_routes(
-                path=args.get("path"),
-                route=args.get("route"),
-                method=args.get("method"),
-            )
+            return self.code_nav.find_routes(path=args.get("path"), route=args.get("route"), method=args.get("method"))
         if tool == "test.run":
             return self.test_runner.run(
                 args["runner"],
@@ -218,12 +194,7 @@ class Executor:
             if dry_run:
                 argv = self.shell.validate_command(args["command"])
                 cwd = self.shell.validate_cwd(args.get("cwd"))
-                return self._simulated_action(
-                    tool,
-                    command=args["command"],
-                    argv=argv,
-                    cwd=str(cwd),
-                )
+                return self._simulated_action(tool, command=args["command"], argv=argv, cwd=str(cwd))
             return self.shell.run_command(args["command"], args.get("cwd"), timeout=self.settings.command_timeout)
         if tool == "git.inspect":
             return self.git.inspect_repo(args.get("cwd"), timeout=args.get("timeout", self.settings.command_timeout))
@@ -234,12 +205,7 @@ class Executor:
             if dry_run:
                 argv = self.git.validate_git_command(args["command"])
                 cwd = self.git.validate_repo_root(args.get("cwd"))
-                return self._simulated_action(
-                    tool,
-                    command=args["command"],
-                    argv=argv,
-                    cwd=str(cwd),
-                )
+                return self._simulated_action(tool, command=args["command"], argv=argv, cwd=str(cwd))
             return self.git.run_git_command(args["command"], args.get("cwd"), timeout=self.settings.command_timeout)
         if tool == "http.get":
             self.security.validate_url(args["url"], profile)
@@ -247,11 +213,7 @@ class Executor:
         if tool == "http.post":
             self.security.validate_url(args["url"], profile)
             if dry_run:
-                return self._simulated_action(
-                    tool,
-                    url=args["url"],
-                    payload_present=bool(args.get("data")),
-                )
+                return self._simulated_action(tool, url=args["url"], payload_present=bool(args.get("data")))
             return await self.http.post(args["url"], args.get("data", {}), headers=args.get("headers"))
         if tool == "analysis":
             response = await self.router.route("analysis", args["prompt"])
