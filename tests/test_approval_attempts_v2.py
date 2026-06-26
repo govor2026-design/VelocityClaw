@@ -52,6 +52,8 @@ def test_find_latest_step_prefers_most_recent_attempt():
 
 
 def test_installation_exposes_public_extension_state_and_is_idempotent():
+    native_lookup = approval_v2._find_step
+
     install_latest_step_lookup(approval_v2)
     installed_wrapper = approval_v2.approve_and_continue
 
@@ -60,6 +62,7 @@ def test_installation_exposes_public_extension_state_and_is_idempotent():
     assert getattr(approval_v2, INSTALLATION_FLAG) is True
     assert getattr(approval_v2, LATEST_STEP_LOOKUP) is find_latest_step
     assert approval_v2.approve_and_continue is installed_wrapper
+    assert approval_v2._find_step is native_lookup
 
 
 def test_approval_guard_uses_latest_attempt_for_retried_step():
