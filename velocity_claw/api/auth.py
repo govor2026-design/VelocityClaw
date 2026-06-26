@@ -27,8 +27,8 @@ def _extract_token(request: Request) -> str | None:
     return None
 
 
-def install_api_key_auth(app: FastAPI, public_paths: Iterable[str] = PUBLIC_PATHS) -> None:
-    public = set(public_paths)
+def install_api_key_auth(app: FastAPI, public_paths: Iterable[str] | None = None) -> None:
+    public = set(public_paths if public_paths is not None else PUBLIC_PATHS)
 
     @app.middleware("http")
     async def api_key_auth_middleware(request: Request, call_next):
