@@ -2,8 +2,13 @@ name: ci
 
 on:
   push:
+    branches: [master]
   pull_request:
+    branches: [master]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -17,19 +22,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -e ".[dev]"
 
       - name: Validate package metadata
-        run: |
-          python scripts/validate_package.py
+        run: python scripts/validate_package.py
 
       - name: Run tests
-        run: |
-          pytest -q 2>&1 | tee pytest-output.txt
+        run: pytest -q 2>&1 | tee pytest-output.txt
 
       - name: Upload pytest failure output
         if: failure()
