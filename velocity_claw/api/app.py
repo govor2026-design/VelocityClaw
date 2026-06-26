@@ -22,6 +22,7 @@ from velocity_claw.api.ops_console import build_operations_console
 from velocity_claw.api.run_detail_v2 import build_artifact_index, build_run_detail_v2
 from velocity_claw.api.server import ApprovalDecisionRequest, create_app as create_base_app
 from velocity_claw.api.version import build_version_payload
+from velocity_claw.core.queue_persistence import persist_queue_job
 
 
 def install_version_endpoint(app: FastAPI) -> None:
@@ -45,7 +46,7 @@ def _prepare_forced_retry(queue, job) -> None:
             "previous_attempts": previous_attempts,
         }
     )
-    queue._persist_job(job)
+    persist_queue_job(queue, job)
 
 
 def install_queue_persistence_v2(app: FastAPI) -> None:
