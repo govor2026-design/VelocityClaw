@@ -12,7 +12,10 @@ def register_retry_routes(app, ok: Callable[..., dict]) -> None:
             return ok("retry_context", app.state.agent.build_retry_context(run_id), run_id=run_id)
         except ValueError as exc:
             if str(exc) == "run_not_found":
-                raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+                raise HTTPException(
+                    status_code=404,
+                    detail={"status": "failed", "error": "not_found", "detail": "Run not found"},
+                ) from exc
             raise
 
     @app.post("/runs/{run_id}/retry")
@@ -22,5 +25,8 @@ def register_retry_routes(app, ok: Callable[..., dict]) -> None:
             return ok("retry", result, run_id=run_id)
         except ValueError as exc:
             if str(exc) == "run_not_found":
-                raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
+                raise HTTPException(
+                    status_code=404,
+                    detail={"status": "failed", "error": "not_found", "detail": "Run not found"},
+                ) from exc
             raise

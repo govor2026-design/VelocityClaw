@@ -12,7 +12,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-_CONFIGURED = False
+_STATE = {"configured": False}
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d %(message)s"
 _DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
@@ -50,12 +50,11 @@ def configure_logging(
     backup_count: int | None = None,
 ) -> logging.Logger:
     """Configure root logging once and return the root logger."""
-    global _CONFIGURED
     root = logging.getLogger()
     level = _resolve_level(level_name)
     root.setLevel(level)
 
-    if _CONFIGURED:
+    if _STATE["configured"]:
         for handler in root.handlers:
             handler.setLevel(level)
         return root
@@ -93,7 +92,7 @@ def configure_logging(
         error_handler.setFormatter(formatter)
         root.addHandler(error_handler)
 
-    _CONFIGURED = True
+    _STATE["configured"] = True
     return root
 
 
@@ -105,9 +104,8 @@ def get_logger(name: str) -> logging.Logger:
 
 def reset_logging_for_tests() -> None:
     """Reset root handlers so tests can assert logging setup deterministically."""
-    global _CONFIGURED
     root = logging.getLogger()
     for handler in list(root.handlers):
         root.removeHandler(handler)
         handler.close()
-    _CONFIGURED = False
+    _STATE["configured"] = False

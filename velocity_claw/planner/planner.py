@@ -156,6 +156,6 @@ class Planner:
         try:
             data = extract_json_payload(response)
             return Plan(**data)
-        except (json.JSONDecodeError, ValidationError, ValueError) as e:
-            self.logger.error("Failed to parse plan: %s", e)
-            raise ValueError(f"Invalid plan format: {e}")
+        except (json.JSONDecodeError, ValidationError, ValueError) as exc:
+            self.logger.error("Failed to parse plan: %s", exc)
+            raise ValueError(f"Invalid plan format: {exc}") from exc

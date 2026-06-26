@@ -32,7 +32,7 @@ dependencies = [
 dev = ["pytest==9.0.3"]
 
 [project.scripts]
-velocity-claw = "cli:main"
+velocity-claw = "velocity_claw.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["velocity_claw*"]
