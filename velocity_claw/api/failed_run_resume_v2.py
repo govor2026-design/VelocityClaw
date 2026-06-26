@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from velocity_claw.api import approval_v2 as approval_v2_module
+from velocity_claw.api.approval_attempts_v2 import install_latest_step_lookup
 from velocity_claw.core.failed_run_resume import (
     FailedRunResumeError,
     install_failed_run_resume_instance,
@@ -26,6 +28,7 @@ def _raise_http(exc: FailedRunResumeError) -> None:
 
 
 def install_failed_run_resume_v2(app: FastAPI) -> None:
+    install_latest_step_lookup(approval_v2_module)
     install_failed_run_resume_instance(app.state.agent)
 
     @app.get("/runs/{run_id}/resume/v2")
