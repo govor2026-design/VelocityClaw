@@ -49,7 +49,7 @@ class TestRunnerTool:
         self,
         runner: str,
         target: Optional[str] = None,
-        timeout: int = 120,
+        timeout: Optional[int] = None,
         extra_args: Optional[list[str]] = None,
         dry_run: bool = False,
         keyword: Optional[str] = None,
@@ -148,12 +148,14 @@ class TestRunnerTool:
             return value.decode("utf-8", errors="replace")
         return str(value)
 
-    def _normalize_timeout(self, timeout: int) -> int:
+    def _normalize_timeout(self, timeout: Optional[int]) -> int:
+        maximum = max(1, int(self.settings.command_timeout))
+        if timeout is None:
+            return maximum
         try:
             value = int(timeout)
         except (TypeError, ValueError) as exc:
             raise ValueError("Test timeout must be an integer") from exc
-        maximum = max(1, int(self.settings.command_timeout))
         if value < 1 or value > maximum:
             raise ValueError(f"Test timeout must be between 1 and {maximum} seconds")
         return value
