@@ -3,19 +3,25 @@ from __future__ import annotations
 from typing import Any
 
 
+INSTALLATION_FLAG = "latest_step_lookup_v2_installed"
+LATEST_STEP_LOOKUP = "find_latest_step"
+
+
+def find_latest_step(run: dict[str, Any], step_id: int) -> dict[str, Any] | None:
+    """Return the most recent attempt for a logical step id."""
+    for step in reversed(run.get("steps", [])):
+        if step.get("id") == step_id:
+            return step
+    return None
+
+
 def install_latest_step_lookup(approval_module: Any) -> None:
-    if getattr(approval_module, "_latest_step_lookup_v2_installed", False):
+    if getattr(approval_module, INSTALLATION_FLAG, False):
         return
 
     original_approve_and_continue = approval_module.approve_and_continue
 
-    def _find_step(run: dict[str, Any], step_id: int) -> dict[str, Any] | None:
-        for step in reversed(run.get("steps", [])):
-            if step.get("id") == step_id:
-                return step
-        return None
-
-    async def _approve_and_continue(
+    async def approve_and_continue_with_latest_step(
         agent: Any,
         run_id: str,
         step_id: int,
@@ -24,7 +30,7 @@ def install_latest_step_lookup(approval_module: Any) -> None:
         reason: str | None,
     ) -> dict[str, Any]:
         run = agent.memory.load_run(run_id)
-        latest = _find_step(run or {}, step_id)
+        latest = find_latest_step(run or {}, step_id)
         if latest and latest.get("phase") == "failed_resume":
             return await agent.approve_step(
                 run_id,
@@ -40,6 +46,8 @@ def install_latest_step_lookup(approval_module: Any) -> None:
             reason=reason,
         )
 
-    approval_module._find_step = _find_step
-    approval_module.approve_and_continue = _approve_and_continue
-    approval_module._latest_step_lookup_v2_installed = True
+    # approval_v2 currently resolves this helper from its module globals.
+    setattr(approval_module, "_find_step", find_latest_step)
+    setattr(approval_module, LATEST_STEP_LOOKUP, find_latest_step)
+    approval_module.approve_and_continue = approve_and_continue_with_latest_step
+    setattr(approval_module, INSTALLATION_FLAG, True)
