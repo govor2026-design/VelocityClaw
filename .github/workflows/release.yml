@@ -190,7 +190,7 @@ jobs:
           gh release view "${TAG_VALUE}" --json tagName,name,isDraft,isPrerelease
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-artifacts-${{ steps.release.outputs.tag }}
           path: |
@@ -203,7 +203,7 @@ jobs:
 
       - name: Upload pytest failure output
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-pytest-failure-output
           path: pytest-output.txt
