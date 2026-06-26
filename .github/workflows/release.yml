@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Optional release tag; must match VERSION, for example v0.2.3"
+        description: "Optional release tag; must match VERSION, for example v0.2.4"
         required: false
         default: ""
         type: string
@@ -26,6 +26,7 @@ concurrency:
 jobs:
   publish-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
 
@@ -39,12 +40,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -e ".[dev]"
           pip install build pip-audit
 
       - name: Validate package metadata
