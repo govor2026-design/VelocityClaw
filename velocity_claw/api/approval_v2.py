@@ -21,7 +21,7 @@ class ApprovalDecisionGuard:
 
 
 def _find_step(run: dict[str, Any], step_id: int) -> dict[str, Any] | None:
-    for step in run.get("steps", []):
+    for step in reversed(run.get("steps", [])):
         if step.get("id") == step_id:
             return step
     return None
