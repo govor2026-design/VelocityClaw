@@ -10,7 +10,6 @@ from velocity_claw.security.profile_explain import (
 )
 from velocity_claw.security.profile_policy_v2 import (
     APPROVAL,
-    DENY,
     evaluate_tool_policy,
     get_tool_mode,
     profile_mode_summary,
@@ -91,8 +90,20 @@ class ExecutionProfileManager:
             profiles[name] = payload
         return profiles
 
+    def _runtime_block_reason(self, tool: str) -> str | None:
+        if tool == "shell.run" and not self.settings.shell_enabled:
+            return "Shell execution is disabled by runtime setting SHELL_ENABLED=false."
+        if tool in {"git.run", "git.inspect"} and not self.settings.git_enabled:
+            return "Git execution is disabled by runtime setting GIT_ENABLED=false."
+        return None
+
     def get_capability_matrix(self, profile_name: Optional[str] = None) -> dict:
         profile = self.get_profile(profile_name)
+        policy = profile_mode_summary(profile.name)
+        policy["effective_tools"] = {
+            tool: self.evaluate_tool(tool, profile.name)
+            for tool in policy["tool_modes"]
+        }
         return {
             "profile": profile.name,
             "description": profile.description,
@@ -105,7 +116,13 @@ class ExecutionProfileManager:
                 "network": profile.network,
                 "approval_workflow": profile.approval_workflow,
             },
-            "policy": profile_mode_summary(profile.name),
+            "runtime_constraints": {
+                "shell_enabled": self.settings.shell_enabled,
+                "git_enabled": self.settings.git_enabled,
+                "dry_run": self.settings.dry_run,
+                "allowed_hosts": list(self.settings.allowed_hosts),
+            },
+            "policy": policy,
         }
 
     def get_tool_mode(self, tool: str, profile_name: Optional[str] = None) -> str:
@@ -127,6 +144,15 @@ class ExecutionProfileManager:
             approved=approved,
             explicit_approval=explicit_approval,
         )
+        decision["profile_blocked"] = decision["blocked"]
+        decision["runtime_blocked"] = False
+        runtime_reason = self._runtime_block_reason(tool)
+        if runtime_reason and not decision["profile_blocked"]:
+            decision["blocked"] = True
+            decision["runtime_blocked"] = True
+            decision["requires_approval"] = False
+            decision["allowed_now"] = False
+            decision["reason"] = runtime_reason
         decision["classification"] = classify_tool(tool)
         return decision
 
@@ -145,8 +171,7 @@ class ApprovalManager:
         self.profile_manager = ExecutionProfileManager(settings)
 
     def requires_approval(self, step: dict, profile_name: Optional[str] = None) -> bool:
-        decision = self.explain_requirement(step, profile_name)
-        return bool(decision["required"])
+        return bool(self.explain_requirement(step, profile_name)["required"])
 
     def explain_requirement(self, step: dict, profile_name: Optional[str] = None) -> dict:
         profile = self.profile_manager.get_profile(profile_name)
@@ -161,7 +186,6 @@ class ApprovalManager:
         )
         classification = policy["classification"]
         triggers: list[str] = []
-
         if not policy["blocked"]:
             if policy["mode"] == APPROVAL:
                 triggers.append(f"{profile.name}_profile_approval_mode")
@@ -170,24 +194,17 @@ class ApprovalManager:
 
         required = bool(policy["requires_approval"] and not policy["blocked"])
         blocked = bool(policy["blocked"])
-        risk_level = classification.get("risk_level") or "unknown"
-        if blocked:
-            risk_level = "high"
-
-        path = args.get("path") or args.get("cwd")
-        command = args.get("command")
+        risk_level = "high" if blocked else classification.get("risk_level") or "unknown"
         summary = {
             "tool": tool,
-            "path": path,
-            "command": command,
+            "path": args.get("path") or args.get("cwd"),
+            "command": args.get("command"),
         }
-        next_step_hint = self._build_next_step_hint(tool, summary, blocked=blocked)
-        operator_hint = self._build_operator_hint(required, blocked, risk_level, tool)
-        recommended_action = self._build_recommended_action(required, blocked, risk_level)
-        approval_label = self._build_approval_label(required, blocked, risk_level, tool)
         return {
             "required": required,
             "blocked": blocked,
+            "profile_blocked": policy.get("profile_blocked", blocked),
+            "runtime_blocked": policy.get("runtime_blocked", False),
             "allowed_now": policy["allowed_now"],
             "profile": profile.name,
             "tool": tool,
@@ -196,10 +213,10 @@ class ApprovalManager:
             "triggers": triggers,
             "summary": summary,
             "reason": policy["reason"],
-            "recommended_action": recommended_action,
-            "operator_hint": operator_hint,
-            "next_step_hint": next_step_hint,
-            "approval_label": approval_label,
+            "recommended_action": self._build_recommended_action(required, blocked, risk_level),
+            "operator_hint": self._build_operator_hint(required, blocked, risk_level, tool),
+            "next_step_hint": self._build_next_step_hint(tool, summary, blocked=blocked),
+            "approval_label": self._build_approval_label(required, blocked, risk_level, tool),
         }
 
     def build_record(self, step: dict, reason: str | None = None, profile_name: Optional[str] = None) -> dict:
@@ -207,37 +224,22 @@ class ApprovalManager:
         if reason:
             explanation["reason"] = reason
         return {
-            "required": explanation["required"],
-            "blocked": explanation["blocked"],
-            "allowed_now": explanation["allowed_now"],
-            "reason": explanation["reason"],
+            **explanation,
             "decision": None,
             "decided_by": None,
             "decided_at": None,
-            "profile": explanation["profile"],
-            "tool": explanation["tool"],
-            "policy_mode": explanation["policy_mode"],
-            "risk_level": explanation["risk_level"],
-            "triggers": explanation["triggers"],
-            "summary": explanation["summary"],
-            "recommended_action": explanation["recommended_action"],
-            "operator_hint": explanation["operator_hint"],
-            "next_step_hint": explanation["next_step_hint"],
-            "approval_label": explanation["approval_label"],
         }
 
     def _build_recommended_action(self, required: bool, blocked: bool, risk_level: str) -> str:
         if blocked:
-            return "change_profile_or_replan"
+            return "change_profile_or_runtime_then_replan"
         if not required:
             return "continue"
-        if risk_level == "high":
-            return "review_then_approve_or_reject"
-        return "quick_review"
+        return "review_then_approve_or_reject" if risk_level == "high" else "quick_review"
 
     def _build_operator_hint(self, required: bool, blocked: bool, risk_level: str, tool: Optional[str]) -> str:
         if blocked:
-            return f"{tool} is hard denied by this profile; approval cannot override the policy."
+            return f"{tool} is blocked by profile or runtime policy; approval cannot override the block."
         if not required:
             return "No operator action required."
         if risk_level == "high":
@@ -246,7 +248,7 @@ class ApprovalManager:
 
     def _build_next_step_hint(self, tool: Optional[str], summary: dict, *, blocked: bool = False) -> str:
         if blocked:
-            return "Replan with an allowed tool or switch to an explicitly authorized profile."
+            return "Replan with an allowed tool or enable an explicitly authorized profile/runtime capability."
         path = summary.get("path")
         command = summary.get("command")
         if tool == "patch.apply" and path:
