@@ -18,6 +18,8 @@ Direct filesystem actions return a structured result containing:
 - unified diff;
 - byte counts before and after the modification.
 
+Dry-run mode returns the same before/after unified diff with `status: simulated` and does not create or modify the target file. This allows approval and inspection workflows to review the exact proposed text change before execution.
+
 A no-op write returns `changed: false` and an empty diff.
 
 When a step result contains a non-empty `diff`, the agent stores it as a run artifact with:
