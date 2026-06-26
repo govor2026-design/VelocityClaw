@@ -1,5 +1,3 @@
-import asyncio
-from typing import Optional
 from velocity_claw.config.settings import Settings
 from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.logs.logger import get_logger
@@ -40,11 +38,11 @@ class VelocityClawTelegramBot:
         return await update.message.reply_text(self._append_signature(text))
 
     def _format_report(self, report: dict) -> str:
-        lines = [f"Задача: {report.get('task')}", f"Статус: {report.get('status')}" ]
-        summary = report.get('summary', '')
+        lines = [f"Задача: {report.get('task')}", f"Статус: {report.get('status')}"]
+        summary = report.get("summary", "")
         if summary:
             lines.append(f"Итог: {summary}")
-        plan = report.get('plan', '')
+        plan = report.get("plan", "")
         if plan:
             lines.append(f"План: {plan}")
         return "\n".join(lines)
@@ -54,35 +52,30 @@ class VelocityClawTelegramBot:
             return True
         return str(update.effective_chat.id) == str(self.settings.telegram_chat_id)
 
-    async def start(self, update, context):
+    async def start(self, update, _context):
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         await self._reply(update, "Velocity Claw active. Отправь /help для списка команд.")
 
-    async def help(self, update, context):
+    async def help(self, update, _context):
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
-        await self._reply(
-            update,
-            "/start\n/help\n/status\n/model\n/reset\n/task <описание>\n/plan\n/logs\n/stop"
-        )
+        await self._reply(update, "/start\n/help\n/status\n/model\n/reset\n/task <описание>\n/plan\n/logs\n/stop")
 
-    async def status(self, update, context):
+    async def status(self, update, _context):
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
-        status = self.agent.get_status()
-        await self._reply(update, str(status))
+        await self._reply(update, str(self.agent.get_status()))
 
-    async def model(self, update, context):
+    async def model(self, update, _context):
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         await self._reply(update, f"Active model route: {self.agent.router.choose_provider('analysis')}")
 
-    async def reset(self, update, context):
+    async def reset(self, update, _context):
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
-        result = self.agent.reset_context()
-        await self._reply(update, str(result))
+        await self._reply(update, str(self.agent.reset_context()))
 
     async def plan(self, update, context):
         if not await self._check_access(update):
@@ -93,12 +86,12 @@ class VelocityClawTelegramBot:
         plan = await self.agent.planner.create_plan(task)
         await self._reply(update, f"Plan:\n{plan}")
 
-    async def logs(self, update, context):
+    async def logs(self, update, _context):
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         await self._reply(update, "Logs available in velocity_claw/logs/velocity_claw.log")
 
-    async def stop(self, update, context):
+    async def stop(self, update, _context):
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         await self._reply(update, "Velocity Claw остановлен вручную.")
@@ -116,7 +109,7 @@ class VelocityClawTelegramBot:
         report = await self.agent.run_task(task)
         await self._reply(update, self._format_report(report))
 
-    async def receive_message(self, update, context):
+    async def receive_message(self, update, _context):
         if not await self._check_access(update):
             return
         text = update.message.text or ""
