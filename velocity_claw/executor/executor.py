@@ -178,8 +178,27 @@ class Executor:
             return self.code_nav.find_symbol(args["name"], args.get("kind"))
         if tool == "code.read_symbol":
             return self.code_nav.read_symbol(args["path"], args["name"], args["kind"])
+        if tool == "code.read_lines":
+            return self.code_nav.read_lines(
+                args["path"],
+                args["start_line"],
+                args["end_line"],
+                args.get("context_lines", 0),
+            )
         if tool == "code.list_imports":
             return self.code_nav.list_imports(args["path"])
+        if tool == "code.find_references":
+            return self.code_nav.find_references(
+                args["name"],
+                path=args.get("path"),
+                limit=args.get("limit", 200),
+            )
+        if tool == "code.find_routes":
+            return self.code_nav.find_routes(
+                path=args.get("path"),
+                route=args.get("route"),
+                method=args.get("method"),
+            )
         if tool == "test.run":
             return self.test_runner.run(
                 args["runner"],
