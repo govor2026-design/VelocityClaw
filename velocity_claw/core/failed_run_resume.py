@@ -29,17 +29,21 @@ class FailedRunResumer:
             self._locks[run_id] = lock
         return lock
 
-    def _artifact_json(self, run: dict[str, Any], name: str, default: Any = None) -> Any:
-        artifact = next(
-            (item for item in reversed(run.get("artifacts") or []) if item.get("name") == name),
-            None,
-        )
+    @staticmethod
+    def _decode_artifact(artifact: dict[str, Any] | None, default: Any = None) -> Any:
         if not artifact:
             return default
         try:
             return json.loads(artifact.get("content") or "null")
         except (TypeError, ValueError):
             return default
+
+    def _artifact_json(self, run: dict[str, Any], name: str, default: Any = None) -> Any:
+        artifact = next(
+            (item for item in reversed(run.get("artifacts") or []) if item.get("name") == name),
+            None,
+        )
+        return self._decode_artifact(artifact, default)
 
     def _plan(self, run: dict[str, Any]) -> dict[str, Any]:
         plan = self._artifact_json(run, "run_plan")
@@ -53,36 +57,46 @@ class FailedRunResumer:
     def _failed_step_index(
         self,
         plan_steps: list[dict[str, Any]],
-        step_records: list[dict[str, Any]],
+        records: list[dict[str, Any]],
     ) -> int:
         latest_by_id = {
             step.get("id"): step
-            for step in effective_steps(step_records)
+            for step in effective_steps(records)
             if step.get("id") is not None
         }
         for index, planned in enumerate(plan_steps):
-            record = latest_by_id.get(planned.get("id"))
-            if record and record.get("status") == "failed":
+            current = latest_by_id.get(planned.get("id"))
+            if current and current.get("status") == "failed":
                 return index
         raise FailedRunResumeError(
             "failed_step_not_found",
             "Run is marked failed but has no effective failed step to resume.",
         )
 
-    def _resume_number(self, run: dict[str, Any]) -> int:
-        count = sum(
+    @staticmethod
+    def _resume_number(run: dict[str, Any]) -> int:
+        return 1 + sum(
             1
             for artifact in run.get("artifacts") or []
             if artifact.get("artifact_type") == "resume_boundary"
         )
-        return count + 1
 
-    def _attempt_for_step(self, records: list[dict[str, Any]], step_id: Any) -> int:
-        attempts = [
-            int(item.get("attempt_no") or 1)
-            for item in records
-            if item.get("id") == step_id
-        ]
+    @staticmethod
+    def _attempt_for_step(
+        records: list[dict[str, Any]],
+        step_id: Any,
+        *,
+        reuse_approval_attempt: bool = False,
+    ) -> int:
+        matching = [item for item in records if item.get("id") == step_id]
+        if reuse_approval_attempt and matching:
+            latest = matching[-1]
+            if (
+                latest.get("phase") == "failed_resume"
+                and latest.get("status") in {"pending_approval", "approved"}
+            ):
+                return max(1, int(latest.get("attempt_no") or 1))
+        attempts = [int(item.get("attempt_no") or 1) for item in matching]
         return max(attempts, default=0) + 1
 
     def preview(self, run_id: str) -> dict[str, Any]:
@@ -95,18 +109,16 @@ class FailedRunResumer:
                 f"Only failed runs can be resumed; current status is {run.get('status')}.",
             )
 
-        plan = self._plan(run)
-        plan_steps = plan.get("steps") or []
+        plan_steps = self._plan(run)["steps"]
         failed_index = self._failed_step_index(plan_steps, run.get("steps") or [])
         failed_step = plan_steps[failed_index]
         lock = self._locks.get(run_id)
-        profile = self.agent._profile_for_run(run)
         return {
             "run_id": run_id,
             "status": run.get("status"),
             "resumable": True,
             "resume_in_progress": bool(lock and lock.locked()),
-            "execution_profile": profile,
+            "execution_profile": self.agent._profile_for_run(run),
             "from_step_id": failed_step.get("id"),
             "from_step_index": failed_index,
             "remaining_step_ids": [item.get("id") for item in plan_steps[failed_index:]],
@@ -186,7 +198,7 @@ class FailedRunResumer:
         )
         return summary
 
-    def _pause_for_resume_approval(
+    def _pause_for_approval(
         self,
         *,
         run: dict[str, Any],
@@ -196,7 +208,6 @@ class FailedRunResumer:
         resume_number: int,
         executed: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        started_at = datetime.now().isoformat()
         approval = self.agent.approvals.build_record(step, profile_name=profile_name)
         step_result = {
             "id": step.get("id"),
@@ -206,7 +217,7 @@ class FailedRunResumer:
             "status": "pending_approval",
             "result": approval,
             "error": None,
-            "started_at": started_at,
+            "started_at": datetime.now().isoformat(),
             "completed_at": datetime.now().isoformat(),
             "attempt_no": attempt_no,
             "phase": "failed_resume",
@@ -217,7 +228,7 @@ class FailedRunResumer:
             attempt_no=attempt_no,
             phase="failed_resume",
         )
-        payload = {
+        boundary_payload = {
             "step_id": step.get("id"),
             "boundary_type": "failed_resume_approval",
             "resume_number": resume_number,
@@ -234,7 +245,7 @@ class FailedRunResumer:
         self.agent.memory.save_artifact(
             run["run_id"],
             f"approval_boundary_step_{step.get('id')}_resume_{resume_number}",
-            json.dumps(payload, ensure_ascii=False),
+            json.dumps(boundary_payload, ensure_ascii=False),
             step_id=step.get("id"),
             artifact_type="approval_boundary",
         )
@@ -244,7 +255,7 @@ class FailedRunResumer:
             "requested",
             actor=None,
             reason=approval.get("reason"),
-            payload={**approval, **payload},
+            payload={**approval, **boundary_payload},
         )
         self.agent.memory.update_run_status(run["run_id"], "awaiting_approval")
         return {
@@ -272,8 +283,12 @@ class FailedRunResumer:
 
         for step in plan_steps[start_index:]:
             step_id = step.get("id")
-            attempt_no = self._attempt_for_step(records, step_id)
             approved = approved_step_id is not None and step_id == approved_step_id
+            attempt_no = self._attempt_for_step(
+                records,
+                step_id,
+                reuse_approval_attempt=approved,
+            )
             outcome = await self.agent.step_guard.execute(
                 step,
                 context,
@@ -282,7 +297,7 @@ class FailedRunResumer:
                 started_at=datetime.now().isoformat(),
             )
             if outcome["state"] == "approval_required":
-                paused = self._pause_for_resume_approval(
+                paused = self._pause_for_approval(
                     run=run,
                     step=step,
                     profile_name=profile_name,
@@ -379,11 +394,7 @@ class FailedRunResumer:
                 boundary=boundary,
             )
 
-    async def continue_after_approval(
-        self,
-        run_id: str,
-        step_id: int,
-    ) -> dict[str, Any]:
+    async def continue_after_approval(self, run_id: str, step_id: int) -> dict[str, Any]:
         lock = self._lock_for(run_id)
         if lock.locked():
             raise FailedRunResumeError(
@@ -395,6 +406,16 @@ class FailedRunResumer:
             run = self.agent.memory.load_run(run_id)
             if not run:
                 raise FailedRunResumeError("run_not_found", "Run not found.", status_code=404)
+            latest = next(
+                (item for item in reversed(run.get("steps") or []) if item.get("id") == step_id),
+                None,
+            )
+            if not latest or latest.get("status") != "approved":
+                raise FailedRunResumeError(
+                    "step_not_approved",
+                    "Failed-resume continuation requires the latest step attempt to be approved.",
+                )
+
             plan = self._plan(run)
             start_index = next(
                 (index for index, item in enumerate(plan["steps"]) if item.get("id") == step_id),
@@ -405,25 +426,22 @@ class FailedRunResumer:
                     "step_boundary_missing",
                     "Approved step is not present in the persisted run plan.",
                 )
-            boundary_artifacts = [
-                item
-                for item in run.get("artifacts") or []
-                if item.get("artifact_type") == "resume_boundary"
-            ]
-            if not boundary_artifacts:
-                raise FailedRunResumeError(
-                    "resume_boundary_missing",
-                    "Failed-run resume boundary is missing.",
-                )
-            try:
-                boundary = json.loads(boundary_artifacts[-1].get("content") or "{}")
-            except (TypeError, ValueError):
-                boundary = {}
-            if not boundary.get("resume_number"):
+
+            boundary_artifact = next(
+                (
+                    item
+                    for item in reversed(run.get("artifacts") or [])
+                    if item.get("artifact_type") == "resume_boundary"
+                ),
+                None,
+            )
+            boundary = self._decode_artifact(boundary_artifact, {})
+            if not isinstance(boundary, dict) or not boundary.get("resume_number"):
                 raise FailedRunResumeError(
                     "resume_boundary_invalid",
-                    "Failed-run resume boundary is invalid.",
+                    "Failed-run resume boundary is missing or invalid.",
                 )
+
             self.agent.memory.update_run_status(run_id, "resuming_failed_run")
             return await self._execute_from(
                 run=run,
@@ -446,7 +464,12 @@ def install_failed_run_resume_instance(agent: Any) -> FailedRunResumer:
     def get_failed_run_resume_state(self, run_id: str):
         return self.failed_run_resumer.preview(run_id)
 
-    async def resume_failed_run(self, run_id: str, actor: str = "operator", reason: str | None = None):
+    async def resume_failed_run(
+        self,
+        run_id: str,
+        actor: str = "operator",
+        reason: str | None = None,
+    ):
         return await self.failed_run_resumer.resume(run_id, actor=actor, reason=reason)
 
     async def resume_after_approval(self, run_id: str, step_id: int):
