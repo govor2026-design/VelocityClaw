@@ -13,7 +13,10 @@ READ_TOOLS = {
     "fs.read",
     "code.find_symbol",
     "code.read_symbol",
+    "code.read_lines",
     "code.list_imports",
+    "code.find_references",
+    "code.find_routes",
     "git.inspect",
     "patch.preview",
 }
