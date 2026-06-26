@@ -23,7 +23,7 @@ dependencies = [
   "pydantic==2.13.4",
   "slowapi==0.1.9",
   "limits==5.8.0",
-  "openai==2.36.0",
+  "openai==2.44.0",
   "anthropic==0.100.0",
   "google-generativeai==0.8.6",
 ]
