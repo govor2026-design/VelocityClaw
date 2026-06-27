@@ -62,7 +62,7 @@ class VelocityClawTelegramBot:
             return await self._reply(update, "Access denied.")
         await self._reply(update, "/start\n/help\n/status\n/model\n/reset\n/task <описание>\n/plan\n/logs\n/stop")
 
-    async def status(self, update, _context):
+    async def status(self, update, _context) -> object | None:
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         await self._reply(update, str(self.agent.get_status()))
