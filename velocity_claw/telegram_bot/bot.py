@@ -4,7 +4,7 @@ from velocity_claw.logs.logger import get_logger
 
 
 class VelocityClawTelegramBot:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings) -> None:
         try:
             from telegram.ext import ApplicationBuilder
         except ImportError as exc:
