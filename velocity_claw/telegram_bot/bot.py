@@ -17,7 +17,7 @@ class VelocityClawTelegramBot:
         self.app = ApplicationBuilder().token(settings.telegram_token).build()
         self._register_handlers()
 
-    def _register_handlers(self):
+    def _register_handlers(self) -> None:
         from telegram.ext import CommandHandler, MessageHandler, filters
 
         self.app.add_handler(CommandHandler("start", self.start))
