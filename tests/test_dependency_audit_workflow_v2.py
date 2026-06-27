@@ -25,5 +25,5 @@ def test_dependency_audit_workflow_validates_package_metadata_and_runs_audit():
 def test_dependency_audit_workflow_uploads_report_artifact():
     content = WORKFLOW.read_text(encoding="utf-8")
     assert "dist/dependency-audit.json" in content
-    assert "actions/upload-artifact@v4" in content
+    assert "actions/upload-artifact@v7" in content
     assert "dependency-audit-report" in content
