@@ -77,7 +77,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     request_id = get_request_id(request)
-    LOGGER.exception("Unhandled API exception request_id=%s", request_id)
+    LOGGER.error(
+        "Unhandled API exception request_id=%s",
+        request_id,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_payload(
