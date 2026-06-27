@@ -67,7 +67,7 @@ class VelocityClawTelegramBot:
             return await self._reply(update, "Access denied.")
         await self._reply(update, str(self.agent.get_status()))
 
-    async def model(self, update, _context):
+    async def model(self, update, _context) -> object | None:
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         await self._reply(update, f"Active model route: {self.agent.router.choose_provider('analysis')}")
