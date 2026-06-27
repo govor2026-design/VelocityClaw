@@ -23,7 +23,7 @@ class ShutdownState:
 shutdown_state = ShutdownState()
 
 
-def _handle_signal(signum: int, frame: Optional[FrameType]) -> None:
+def _handle_signal(signum: int, _frame: Optional[FrameType]) -> None:
     signal_name = signal.Signals(signum).name
     shutdown_state.request(signal_name)
     get_logger("velocity_claw.runtime").warning("Shutdown requested by %s", signal_name)
