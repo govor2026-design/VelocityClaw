@@ -1,4 +1,9 @@
+from velocity_claw.api.app import create_app
 from velocity_claw.api.dashboard_filters import compact_step_inspector, filter_runs, run_profile
+
+
+def test_app_module_imports_with_dashboard_filters_available() -> None:
+    assert callable(create_app)
 
 
 def test_run_profile_reads_execution_profile_contract() -> None:
@@ -16,7 +21,7 @@ def test_filter_runs_supports_queued_and_awaiting_approval() -> None:
     assert [run["run_id"] for run in filter_runs(runs, status="awaiting_approval")] == ["2"]
 
 
-def test_compact_step_inspector_limits_result_preview_to_240_characters() -> None:
+def test_compact_step_inspector_limits_result_to_240_characters() -> None:
     inspected = compact_step_inspector(
         {
             "run_id": "run-1",
@@ -27,6 +32,8 @@ def test_compact_step_inspector_limits_result_preview_to_240_characters() -> Non
     )
 
     assert inspected is not None
+    assert set(inspected) == {"run_id", "profile", "step_count", "artifact_count", "steps"}
     assert inspected["profile"] == "safe"
-    assert len(inspected["steps"][0]["result_preview"]) == 240
-    assert inspected["steps"][0]["result_preview"].endswith("…")
+    assert len(inspected["steps"][0]["result"]) == 240
+    assert inspected["steps"][0]["result"].endswith("…")
+    assert inspected["steps"][0]["result_preview"] == inspected["steps"][0]["result"]
