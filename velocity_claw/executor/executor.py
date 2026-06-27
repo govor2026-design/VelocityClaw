@@ -104,14 +104,20 @@ class Executor:
     def _simulate_file_action(self, tool: str, args: Dict) -> dict:
         resolved = self.fs.validate_path(args["path"])
         before_size = resolved.stat().st_size if resolved.exists() else 0
+        would_change = False
 
         if tool == "fs.write":
-            after_size = self._validate_content_size(args["content"])
+            content = str(args["content"])
+            after_size = self._validate_content_size(content)
+            current = self.fs.read(args["path"]) if resolved.exists() else None
+            would_change = current != content
         elif tool == "fs.append":
-            append_size = self._validate_content_size(args["content"])
+            append_content = str(args["content"])
+            append_size = self._validate_content_size(append_content)
             after_size = before_size + append_size
             if after_size > self.settings.max_file_size:
                 raise ValueError("File would exceed size limit")
+            would_change = bool(append_content)
         elif tool == "fs.replace":
             current = self.fs.read(args["path"])
             old_string = args["old_string"]
@@ -119,6 +125,7 @@ class Executor:
                 raise ValueError(f"Old string not found in {args['path']}")
             updated = current.replace(old_string, args["new_string"], 1)
             after_size = self._validate_content_size(updated)
+            would_change = updated != current
         else:
             raise ValueError(f"Unsupported dry-run file action: {tool}")
 
@@ -131,7 +138,7 @@ class Executor:
             "exists": resolved.exists(),
             "bytes_before": before_size,
             "bytes_after": after_size,
-            "would_change": before_size != after_size or tool == "fs.replace",
+            "would_change": would_change,
         }
 
     @staticmethod
