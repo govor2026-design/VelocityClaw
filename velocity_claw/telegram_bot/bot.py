@@ -77,7 +77,7 @@ class VelocityClawTelegramBot:
             return await self._reply(update, "Access denied.")
         await self._reply(update, str(self.agent.reset_context()))
 
-    async def plan(self, update, context):
+    async def plan(self, update, context) -> object | None:
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         task = " ".join(context.args) if getattr(context, "args", None) else None
