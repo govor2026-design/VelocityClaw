@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-INSTALLATION_FLAG = "latest_step_lookup_v2_installed"
+INSTALLATION_FLAG = "_latest_step_lookup_v2_installed"
 LATEST_STEP_LOOKUP = "find_latest_step"
 
 
