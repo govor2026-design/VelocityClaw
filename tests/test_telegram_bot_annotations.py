@@ -19,3 +19,9 @@ def test_polling_entrypoint_declares_none_return() -> None:
     hints = get_type_hints(VelocityClawTelegramBot.run)
 
     assert hints["return"] is type(None)
+
+
+def test_report_mapping_annotation_is_parameterized() -> None:
+    hints = get_type_hints(VelocityClawTelegramBot._format_report)
+
+    assert hints["report"] == dict[str, object]
