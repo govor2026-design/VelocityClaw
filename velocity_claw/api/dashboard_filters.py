@@ -3,61 +3,75 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-VALID_PROFILES = frozenset({"safe", "dev", "owner"})
-VALID_RUN_STATUSES = frozenset(
-    {"running", "completed", "failed", "cancelled", "paused", "pending_approval"}
-)
+VALID_PROFILES = {"safe", "dev", "owner"}
+VALID_RUN_STATUSES = {
+    "queued",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "paused",
+    "pending_approval",
+    "awaiting_approval",
+}
 
 
 def normalize_filter(value: str | None, valid_values: Iterable[str]) -> str | None:
-    """Normalize a dashboard query filter and reject unsupported values."""
+    """Return a normalized supported filter value, otherwise ``None``."""
     if value is None:
         return None
     normalized = str(value).strip().lower()
-    if not normalized:
-        return None
-    allowed = set(valid_values)
-    return normalized if normalized in allowed else None
+    return normalized if normalized in set(valid_values) else None
 
 
 def run_profile(run: Mapping[str, Any] | None) -> str | None:
-    """Return a normalized execution profile from a run payload."""
+    """Return the execution profile stored on the run or in its context."""
     if not run:
         return None
-    direct = run.get("profile")
-    if direct is None:
+
+    profile = run.get("execution_profile")
+    if profile is None:
         context = run.get("context")
         if isinstance(context, Mapping):
-            direct = context.get("profile")
-    if direct is None:
+            profile = context.get("execution_profile")
+
+    # Keep compatibility with older persisted runs.
+    if profile is None:
+        profile = run.get("profile")
+    if profile is None:
+        context = run.get("context")
+        if isinstance(context, Mapping):
+            profile = context.get("profile")
+    if profile is None:
         metadata = run.get("metadata")
         if isinstance(metadata, Mapping):
-            direct = metadata.get("profile")
-    return normalize_filter(str(direct) if direct is not None else None, VALID_PROFILES)
+            profile = metadata.get("execution_profile") or metadata.get("profile")
+
+    return normalize_filter(str(profile) if profile is not None else None, VALID_PROFILES)
 
 
 def filter_runs(
     runs: Iterable[Mapping[str, Any]],
-    *,
     status: str | None = None,
     profile: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Filter run records by supported status and profile values."""
+    """Return runs matching the requested supported status and profile."""
     normalized_status = normalize_filter(status, VALID_RUN_STATUSES)
     normalized_profile = normalize_filter(profile, VALID_PROFILES)
+
     filtered: list[dict[str, Any]] = []
     for item in runs:
         run = dict(item)
         run_status = str(run.get("status") or "").strip().lower()
-        if normalized_status and run_status != normalized_status:
+        if normalized_status is not None and run_status != normalized_status:
             continue
-        if normalized_profile and run_profile(run) != normalized_profile:
+        if normalized_profile is not None and run_profile(run) != normalized_profile:
             continue
         filtered.append(run)
     return filtered
 
 
-def _preview(value: Any, *, limit: int = 800) -> str:
+def _preview(value: Any, *, limit: int = 240) -> str:
     if value is None:
         return ""
     text = str(value)
@@ -65,16 +79,17 @@ def _preview(value: Any, *, limit: int = 800) -> str:
 
 
 def compact_step_inspector(run: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """Build the compact, HTML-safe data model consumed by the runs dashboard."""
+    """Build the compact run/step payload used by the dashboard."""
     if not run:
         return None
+
     raw_steps = run.get("steps")
     steps: list[dict[str, Any]] = []
     if isinstance(raw_steps, list):
         for index, item in enumerate(raw_steps, start=1):
             if not isinstance(item, Mapping):
                 continue
-            result = item.get("result_preview", item.get("result"))
+            result = _preview(item.get("result_preview", item.get("result")))
             steps.append(
                 {
                     "id": item.get("id", index),
@@ -82,7 +97,8 @@ def compact_step_inspector(run: Mapping[str, Any] | None) -> dict[str, Any] | No
                     "tool": item.get("tool") or item.get("action") or "",
                     "status": item.get("status") or "unknown",
                     "error": _preview(item.get("error")),
-                    "result_preview": _preview(result),
+                    "result": result,
+                    "result_preview": result,
                 }
             )
 
@@ -93,7 +109,7 @@ def compact_step_inspector(run: Mapping[str, Any] | None) -> dict[str, Any] | No
         "task": run.get("task") or run.get("title") or "",
         "status": run.get("status") or "unknown",
         "profile": run_profile(run),
-        "steps": steps,
         "step_count": len(steps),
         "artifact_count": artifact_count,
+        "steps": steps,
     }
