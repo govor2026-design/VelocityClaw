@@ -79,3 +79,9 @@ def test_command_handler_declares_optional_reply_return() -> None:
     hints = get_type_hints(VelocityClawTelegramBot.task)
 
     assert hints["return"] == object | None
+
+
+def test_message_handler_declares_none_return() -> None:
+    hints = get_type_hints(VelocityClawTelegramBot.receive_message)
+
+    assert hints["return"] is type(None)
