@@ -34,7 +34,7 @@ class VelocityClawTelegramBot:
     def _append_signature(self, text: str) -> str:
         return f"{text.rstrip()}\n\nvelocity claw"
 
-    async def _reply(self, update, text: str):
+    async def _reply(self, update, text: str) -> object:
         return await update.message.reply_text(self._append_signature(text))
 
     def _format_report(self, report: dict[str, object]) -> str:
