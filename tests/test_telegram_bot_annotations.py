@@ -13,3 +13,9 @@ def test_handler_registration_declares_none_return() -> None:
     hints = get_type_hints(VelocityClawTelegramBot._register_handlers)
 
     assert hints["return"] is type(None)
+
+
+def test_polling_entrypoint_declares_none_return() -> None:
+    hints = get_type_hints(VelocityClawTelegramBot.run)
+
+    assert hints["return"] is type(None)
