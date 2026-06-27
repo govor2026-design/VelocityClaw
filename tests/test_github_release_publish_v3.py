@@ -30,7 +30,7 @@ def test_publish_release_workflow_runs_validation_before_publish():
 
 def test_publish_release_workflow_creates_github_release_with_artifacts():
     content = WORKFLOW.read_text(encoding="utf-8")
-    assert "softprops/action-gh-release@v2" in content
+    assert "softprops/action-gh-release@v3" in content
     assert "tag_name: ${{ inputs.tag }}" in content
     assert "body_path: dist/release-notes.md" in content
     assert "files: |" in content
