@@ -5,7 +5,16 @@ from typing import Any
 
 VALID_PROFILES = frozenset({"safe", "dev", "owner"})
 VALID_RUN_STATUSES = frozenset(
-    {"running", "completed", "failed", "cancelled", "paused", "pending_approval"}
+    {
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+        "paused",
+        "pending_approval",
+        "awaiting_approval",
+    }
 )
 
 
@@ -24,15 +33,16 @@ def run_profile(run: Mapping[str, Any] | None) -> str | None:
     """Return a normalized execution profile from a run payload."""
     if not run:
         return None
-    direct = run.get("profile")
+
+    direct = run.get("execution_profile") or run.get("profile")
     if direct is None:
         context = run.get("context")
         if isinstance(context, Mapping):
-            direct = context.get("profile")
+            direct = context.get("execution_profile") or context.get("profile")
     if direct is None:
         metadata = run.get("metadata")
         if isinstance(metadata, Mapping):
-            direct = metadata.get("profile")
+            direct = metadata.get("execution_profile") or metadata.get("profile")
     return normalize_filter(str(direct) if direct is not None else None, VALID_PROFILES)
 
 
@@ -57,7 +67,7 @@ def filter_runs(
     return filtered
 
 
-def _preview(value: Any, *, limit: int = 800) -> str:
+def _preview(value: Any, *, limit: int = 240) -> str:
     if value is None:
         return ""
     text = str(value)
