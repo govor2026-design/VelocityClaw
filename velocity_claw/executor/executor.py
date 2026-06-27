@@ -104,20 +104,16 @@ class Executor:
     def _simulate_file_action(self, tool: str, args: Dict) -> dict:
         resolved = self.fs.validate_path(args["path"])
         before_size = resolved.stat().st_size if resolved.exists() else 0
-        would_change = False
 
         if tool == "fs.write":
-            content = str(args["content"])
-            after_size = self._validate_content_size(content)
-            current = self.fs.read(args["path"]) if resolved.exists() else None
-            would_change = current != content
+            after_size = self._validate_content_size(args["content"])
+            would_change = before_size != after_size
         elif tool == "fs.append":
-            append_content = str(args["content"])
-            append_size = self._validate_content_size(append_content)
+            append_size = self._validate_content_size(args["content"])
             after_size = before_size + append_size
             if after_size > self.settings.max_file_size:
                 raise ValueError("File would exceed size limit")
-            would_change = bool(append_content)
+            would_change = before_size != after_size
         elif tool == "fs.replace":
             current = self.fs.read(args["path"])
             old_string = args["old_string"]
