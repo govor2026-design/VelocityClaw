@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from velocity_claw.logs import logger as logger_module
 
@@ -17,5 +18,25 @@ def test_zero_max_bytes_disables_rotation(monkeypatch, tmp_path) -> None:
     try:
         logger_module.configure_logging(enable_file=True, log_dir=tmp_path, max_bytes=0)
         assert recorded_max_bytes == [0, 0]
+    finally:
+        logger_module.reset_logging_for_tests()
+
+
+def test_empty_log_dir_targets_current_directory(monkeypatch, tmp_path) -> None:
+    recorded_paths: list[Path] = []
+
+    class RecordingHandler(logging.Handler):
+        def __init__(self, filename, *, maxBytes: int, backupCount: int, encoding: str) -> None:
+            super().__init__()
+            recorded_paths.append(Path(filename))
+
+    logger_module.reset_logging_for_tests()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LOG_DIR", "ignored-log-directory")
+    monkeypatch.setattr(logger_module, "RotatingFileHandler", RecordingHandler)
+
+    try:
+        logger_module.configure_logging(enable_file=True, log_dir="")
+        assert recorded_paths == [Path("velocity_claw.log"), Path("velocity_claw_errors.log")]
     finally:
         logger_module.reset_logging_for_tests()
