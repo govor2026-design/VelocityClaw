@@ -68,7 +68,7 @@ def configure_logging(
     if file_logging_enabled:
         resolved_log_dir = Path(log_dir or os.getenv("LOG_DIR", DEFAULT_LOG_DIR))
         resolved_log_dir.mkdir(parents=True, exist_ok=True)
-        resolved_max_bytes = max_bytes or _resolve_int_env("LOG_FILE_MAX_BYTES", 10 * 1024 * 1024)
+        resolved_max_bytes = max_bytes if max_bytes is not None else _resolve_int_env("LOG_FILE_MAX_BYTES", 10 * 1024 * 1024)
         resolved_backup_count = backup_count if backup_count is not None else _resolve_int_env("LOG_FILE_BACKUP_COUNT", 5)
 
         app_handler = RotatingFileHandler(
