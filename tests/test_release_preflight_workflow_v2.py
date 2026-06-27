@@ -30,7 +30,7 @@ def test_release_preflight_workflow_uploads_artifacts():
     content = WORKFLOW.read_text(encoding="utf-8")
     assert "Generate preflight summary" in content
     assert "dist/release-preflight-summary.md" in content
-    assert "actions/upload-artifact@v4" in content
+    assert "actions/upload-artifact@v7" in content
     assert "release-preflight-artifacts" in content
     assert "path: |" in content
     assert "dist/*" in content
