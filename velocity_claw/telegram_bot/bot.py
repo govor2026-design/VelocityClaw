@@ -37,7 +37,7 @@ class VelocityClawTelegramBot:
     async def _reply(self, update, text: str):
         return await update.message.reply_text(self._append_signature(text))
 
-    def _format_report(self, report: dict) -> str:
+    def _format_report(self, report: dict[str, object]) -> str:
         lines = [f"Задача: {report.get('task')}", f"Статус: {report.get('status')}"]
         summary = report.get("summary", "")
         if summary:
