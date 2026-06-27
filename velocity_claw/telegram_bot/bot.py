@@ -120,5 +120,5 @@ class VelocityClawTelegramBot:
         elif getattr(update.message, "document", None):
             await self._reply(update, "Файл принят. Сейчас не поддерживается прямое выполнение вложений.")
 
-    def run(self):
+    def run(self) -> None:
         self.app.run_polling()
