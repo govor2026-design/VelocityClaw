@@ -32,6 +32,7 @@ def _install_dry_run_file_diff_preview(executor_cls: type) -> None:
             raise ValueError(f"Content too large: {encoded_size}")
 
         display_path = self.fs.display_path(resolved)
+        would_change = before != after
         return {
             "status": "simulated",
             "dry_run": True,
@@ -39,7 +40,8 @@ def _install_dry_run_file_diff_preview(executor_cls: type) -> None:
             "action": tool,
             "path": display_path,
             "exists": resolved.exists(),
-            "changed": before != after,
+            "changed": would_change,
+            "would_change": would_change,
             "diff": self.fs.make_diff(display_path, before, after),
             "bytes_before": len(before.encode("utf-8")),
             "bytes_after": encoded_size,
