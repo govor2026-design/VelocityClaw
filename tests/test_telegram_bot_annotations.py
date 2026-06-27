@@ -25,3 +25,9 @@ def test_report_mapping_annotation_is_parameterized() -> None:
     hints = get_type_hints(VelocityClawTelegramBot._format_report)
 
     assert hints["report"] == dict[str, object]
+
+
+def test_reply_helper_declares_return_type() -> None:
+    hints = get_type_hints(VelocityClawTelegramBot._reply)
+
+    assert hints["return"] is object
