@@ -66,7 +66,7 @@ def configure_logging(
 
     file_logging_enabled = enable_file if enable_file is not None else os.getenv("LOG_TO_FILE", "true").lower() not in {"0", "false", "no", "off"}
     if file_logging_enabled:
-        resolved_log_dir = Path(log_dir or os.getenv("LOG_DIR", DEFAULT_LOG_DIR))
+        resolved_log_dir = Path(log_dir if log_dir is not None else os.getenv("LOG_DIR", DEFAULT_LOG_DIR))
         resolved_log_dir.mkdir(parents=True, exist_ok=True)
         resolved_max_bytes = max_bytes if max_bytes is not None else _resolve_int_env("LOG_FILE_MAX_BYTES", 10 * 1024 * 1024)
         resolved_backup_count = backup_count if backup_count is not None else _resolve_int_env("LOG_FILE_BACKUP_COUNT", 5)
