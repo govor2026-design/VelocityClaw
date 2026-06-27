@@ -26,6 +26,6 @@ def test_build_artifact_workflow_validates_before_building():
 
 def test_build_artifact_workflow_uploads_dist_artifacts():
     content = WORKFLOW.read_text(encoding="utf-8")
-    assert "actions/upload-artifact@v4" in content
+    assert "actions/upload-artifact@v7" in content
     assert "python-package-artifacts" in content
     assert "path: dist/*" in content
