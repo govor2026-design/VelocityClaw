@@ -97,7 +97,7 @@ class VelocityClawTelegramBot:
         await self._reply(update, "Velocity Claw остановлен вручную.")
         await self.app.stop()
 
-    async def task(self, update, context):
+    async def task(self, update, context) -> object | None:
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         task = " ".join(context.args) if getattr(context, "args", None) else None
