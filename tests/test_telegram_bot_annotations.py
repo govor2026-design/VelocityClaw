@@ -31,3 +31,9 @@ def test_reply_helper_declares_return_type() -> None:
     hints = get_type_hints(VelocityClawTelegramBot._reply)
 
     assert hints["return"] is object
+
+
+def test_start_handler_declares_optional_reply_return() -> None:
+    hints = get_type_hints(VelocityClawTelegramBot.start)
+
+    assert hints["return"] == object | None
