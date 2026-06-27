@@ -44,6 +44,10 @@ def run_with_attempts():
     }
 
 
+def test_installation_marker_preserves_legacy_module_attribute():
+    assert INSTALLATION_FLAG == "_latest_step_lookup_v2_installed"
+
+
 def test_find_latest_step_prefers_most_recent_attempt():
     latest = find_latest_step(run_with_attempts(), 2)
 
