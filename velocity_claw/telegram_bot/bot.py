@@ -109,7 +109,7 @@ class VelocityClawTelegramBot:
         report = await self.agent.run_task(task)
         await self._reply(update, self._format_report(report))
 
-    async def receive_message(self, update, _context):
+    async def receive_message(self, update, _context) -> None:
         if not await self._check_access(update):
             return
         text = update.message.text or ""
