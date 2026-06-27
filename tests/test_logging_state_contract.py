@@ -1,5 +1,3 @@
-import logging
-
 from velocity_claw.logs import logger as logger_module
 
 
