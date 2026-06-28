@@ -64,7 +64,7 @@ def configure_logging(
     stream_handler.setFormatter(formatter)
     root.addHandler(stream_handler)
 
-    file_logging_enabled = enable_file if enable_file is not None else os.getenv("LOG_TO_FILE", "true").lower() not in {"0", "false", "no", "off"}
+    file_logging_enabled = enable_file if enable_file is not None else os.getenv("LOG_TO_FILE", "true").strip().lower() not in {"0", "false", "no", "off"}
     if file_logging_enabled:
         resolved_log_dir = Path(log_dir if log_dir is not None else os.getenv("LOG_DIR", DEFAULT_LOG_DIR))
         resolved_log_dir.mkdir(parents=True, exist_ok=True)
