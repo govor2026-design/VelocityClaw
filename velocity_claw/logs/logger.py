@@ -21,7 +21,7 @@ DEFAULT_ERROR_LOG_FILE = "velocity_claw_errors.log"
 
 
 def _resolve_level(level_name: str | None = None) -> int:
-    value = (level_name or os.getenv("LOG_LEVEL", "INFO")).upper()
+    value = (level_name if level_name is not None else os.getenv("LOG_LEVEL", "INFO")).upper()
     level = logging.getLevelName(value)
     return level if isinstance(level, int) else logging.INFO
 
