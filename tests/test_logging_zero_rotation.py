@@ -77,3 +77,21 @@ def test_negative_rotation_setting_uses_default(monkeypatch) -> None:
 def test_explicit_negative_rotation_setting_is_rejected(setting) -> None:
     with pytest.raises(ValueError):
         logger_module.configure_logging(**setting)
+
+
+def test_reconfigure_preserves_error_only_handler_level(tmp_path) -> None:
+    logger_module.reset_logging_for_tests()
+
+    try:
+        root = logger_module.configure_logging(enable_file=True, log_dir=tmp_path, level_name="INFO")
+        logger_module.configure_logging(level_name="DEBUG")
+        error_handlers = [
+            handler
+            for handler in root.handlers
+            if getattr(handler, logger_module._ERROR_HANDLER_ATTR, False)
+        ]
+
+        assert len(error_handlers) == 1
+        assert error_handlers[0].level == logging.ERROR
+    finally:
+        logger_module.reset_logging_for_tests()
