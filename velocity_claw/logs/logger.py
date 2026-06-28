@@ -13,6 +13,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _LOGGING_STATE_ATTR = "_velocity_claw_configured"
+_ERROR_HANDLER_ATTR = "_velocity_claw_error_only"
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d %(message)s"
 _DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
 DEFAULT_LOG_DIR = "logs"
@@ -61,7 +62,7 @@ def configure_logging(
 
     if getattr(root, _LOGGING_STATE_ATTR, False):
         for handler in root.handlers:
-            handler.setLevel(level)
+            handler.setLevel(logging.ERROR if getattr(handler, _ERROR_HANDLER_ATTR, False) else level)
         return root
 
     formatter = _build_formatter()
@@ -93,6 +94,7 @@ def configure_logging(
             backupCount=resolved_backup_count,
             encoding="utf-8",
         )
+        setattr(error_handler, _ERROR_HANDLER_ATTR, True)
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(formatter)
         root.addHandler(error_handler)
