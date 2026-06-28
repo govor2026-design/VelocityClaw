@@ -50,6 +50,11 @@ def configure_logging(
     backup_count: int | None = None,
 ) -> logging.Logger:
     """Configure root logging once and return the root logger."""
+    if max_bytes is not None and max_bytes < 0:
+        raise ValueError("max_bytes must be non-negative")
+    if backup_count is not None and backup_count < 0:
+        raise ValueError("backup_count must be non-negative")
+
     root = logging.getLogger()
     level = _resolve_level(level_name)
     root.setLevel(level)
