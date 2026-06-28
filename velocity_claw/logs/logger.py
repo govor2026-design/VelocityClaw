@@ -62,10 +62,19 @@ def configure_logging(
     root.setLevel(level)
     file_logging_enabled = enable_file if enable_file is not None else os.getenv("LOG_TO_FILE", "true").strip().lower() not in {"0", "false", "no", "off"}
     formatter = _build_formatter()
+    resolved_log_dir = Path(log_dir if log_dir is not None else os.getenv("LOG_DIR", DEFAULT_LOG_DIR))
 
     if getattr(root, _LOGGING_STATE_ATTR, False):
+        requested_log_dir = resolved_log_dir.resolve()
         for handler in list(root.handlers):
-            if not file_logging_enabled and getattr(handler, _FILE_HANDLER_ATTR, False):
+            is_managed_file = bool(getattr(handler, _FILE_HANDLER_ATTR, False))
+            current_log_dir = Path(handler.baseFilename).parent if is_managed_file else None
+            should_replace_file = (
+                file_logging_enabled
+                and is_managed_file
+                and current_log_dir != requested_log_dir
+            )
+            if (not file_logging_enabled and is_managed_file) or should_replace_file:
                 root.removeHandler(handler)
                 handler.close()
                 continue
@@ -81,7 +90,6 @@ def configure_logging(
         root.addHandler(stream_handler)
 
     if file_logging_enabled:
-        resolved_log_dir = Path(log_dir if log_dir is not None else os.getenv("LOG_DIR", DEFAULT_LOG_DIR))
         resolved_log_dir.mkdir(parents=True, exist_ok=True)
         resolved_max_bytes = max_bytes if max_bytes is not None else _resolve_int_env("LOG_FILE_MAX_BYTES", 10 * 1024 * 1024)
         resolved_backup_count = backup_count if backup_count is not None else _resolve_int_env("LOG_FILE_BACKUP_COUNT", 5)
