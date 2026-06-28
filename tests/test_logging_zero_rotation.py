@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
 
+import pytest
+
 from velocity_claw.logs import logger as logger_module
 
 
@@ -69,3 +71,9 @@ def test_negative_rotation_setting_uses_default(monkeypatch) -> None:
     monkeypatch.setenv("LOG_FILE_BACKUP_COUNT", "-1")
 
     assert logger_module._resolve_int_env("LOG_FILE_BACKUP_COUNT", 5) == 5
+
+
+@pytest.mark.parametrize("setting", [{"max_bytes": -1}, {"backup_count": -1}])
+def test_explicit_negative_rotation_setting_is_rejected(setting) -> None:
+    with pytest.raises(ValueError):
+        logger_module.configure_logging(**setting)
