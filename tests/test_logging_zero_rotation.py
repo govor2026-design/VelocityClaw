@@ -63,3 +63,9 @@ def test_log_level_ignores_surrounding_whitespace(monkeypatch) -> None:
     monkeypatch.setenv("LOG_LEVEL", " debug ")
 
     assert logger_module._resolve_level() == logging.DEBUG
+
+
+def test_negative_rotation_setting_uses_default(monkeypatch) -> None:
+    monkeypatch.setenv("LOG_FILE_BACKUP_COUNT", "-1")
+
+    assert logger_module._resolve_int_env("LOG_FILE_BACKUP_COUNT", 5) == 5
