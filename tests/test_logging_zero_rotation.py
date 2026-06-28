@@ -46,3 +46,14 @@ def test_empty_explicit_level_does_not_use_environment(monkeypatch) -> None:
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
     assert logger_module._resolve_level("") == logging.INFO
+
+
+def test_file_logging_toggle_ignores_surrounding_whitespace(monkeypatch) -> None:
+    logger_module.reset_logging_for_tests()
+    monkeypatch.setenv("LOG_TO_FILE", " false ")
+
+    try:
+        root = logger_module.configure_logging()
+        assert not any(isinstance(handler, logger_module.RotatingFileHandler) for handler in root.handlers)
+    finally:
+        logger_module.reset_logging_for_tests()
