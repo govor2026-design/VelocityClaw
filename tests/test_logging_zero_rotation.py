@@ -132,3 +132,22 @@ def test_reconfigure_can_restore_managed_file_handlers(tmp_path) -> None:
         ) == 2
     finally:
         logger_module.reset_logging_for_tests()
+
+
+def test_reconfigure_moves_managed_file_handlers_to_new_directory(tmp_path) -> None:
+    logger_module.reset_logging_for_tests()
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+
+    try:
+        root = logger_module.configure_logging(enable_file=True, log_dir=first_dir)
+        logger_module.configure_logging(enable_file=True, log_dir=second_dir)
+        managed_paths = {
+            Path(handler.baseFilename).parent
+            for handler in root.handlers
+            if getattr(handler, logger_module._FILE_HANDLER_ATTR, False)
+        }
+
+        assert managed_paths == {second_dir.resolve()}
+    finally:
+        logger_module.reset_logging_for_tests()
