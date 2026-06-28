@@ -14,6 +14,7 @@ from pathlib import Path
 
 _LOGGING_STATE_ATTR = "_velocity_claw_configured"
 _ERROR_HANDLER_ATTR = "_velocity_claw_error_only"
+_FILE_HANDLER_ATTR = "_velocity_claw_file_handler"
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d %(message)s"
 _DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
 DEFAULT_LOG_DIR = "logs"
@@ -59,9 +60,14 @@ def configure_logging(
     root = logging.getLogger()
     level = _resolve_level(level_name)
     root.setLevel(level)
+    file_logging_enabled = enable_file if enable_file is not None else os.getenv("LOG_TO_FILE", "true").strip().lower() not in {"0", "false", "no", "off"}
 
     if getattr(root, _LOGGING_STATE_ATTR, False):
-        for handler in root.handlers:
+        for handler in list(root.handlers):
+            if not file_logging_enabled and getattr(handler, _FILE_HANDLER_ATTR, False):
+                root.removeHandler(handler)
+                handler.close()
+                continue
             handler.setLevel(logging.ERROR if getattr(handler, _ERROR_HANDLER_ATTR, False) else level)
         return root
 
@@ -71,7 +77,6 @@ def configure_logging(
     stream_handler.setFormatter(formatter)
     root.addHandler(stream_handler)
 
-    file_logging_enabled = enable_file if enable_file is not None else os.getenv("LOG_TO_FILE", "true").strip().lower() not in {"0", "false", "no", "off"}
     if file_logging_enabled:
         resolved_log_dir = Path(log_dir if log_dir is not None else os.getenv("LOG_DIR", DEFAULT_LOG_DIR))
         resolved_log_dir.mkdir(parents=True, exist_ok=True)
@@ -84,6 +89,7 @@ def configure_logging(
             backupCount=resolved_backup_count,
             encoding="utf-8",
         )
+        setattr(app_handler, _FILE_HANDLER_ATTR, True)
         app_handler.setLevel(level)
         app_handler.setFormatter(formatter)
         root.addHandler(app_handler)
@@ -94,6 +100,7 @@ def configure_logging(
             backupCount=resolved_backup_count,
             encoding="utf-8",
         )
+        setattr(error_handler, _FILE_HANDLER_ATTR, True)
         setattr(error_handler, _ERROR_HANDLER_ATTR, True)
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(formatter)
