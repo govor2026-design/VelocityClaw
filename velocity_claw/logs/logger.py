@@ -31,9 +31,10 @@ def _resolve_int_env(name: str, default: int) -> int:
     if raw is None:
         return default
     try:
-        return int(raw)
+        value = int(raw)
     except ValueError:
         return default
+    return value if value >= 0 else default
 
 
 def _build_formatter() -> logging.Formatter:
