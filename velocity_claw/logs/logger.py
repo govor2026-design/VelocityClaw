@@ -61,6 +61,7 @@ def configure_logging(
     level = _resolve_level(level_name)
     root.setLevel(level)
     file_logging_enabled = enable_file if enable_file is not None else os.getenv("LOG_TO_FILE", "true").strip().lower() not in {"0", "false", "no", "off"}
+    formatter = _build_formatter()
 
     if getattr(root, _LOGGING_STATE_ATTR, False):
         for handler in list(root.handlers):
@@ -69,13 +70,15 @@ def configure_logging(
                 handler.close()
                 continue
             handler.setLevel(logging.ERROR if getattr(handler, _ERROR_HANDLER_ATTR, False) else level)
-        return root
-
-    formatter = _build_formatter()
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(level)
-    stream_handler.setFormatter(formatter)
-    root.addHandler(stream_handler)
+        if not file_logging_enabled or any(
+            getattr(handler, _FILE_HANDLER_ATTR, False) for handler in root.handlers
+        ):
+            return root
+    else:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setLevel(level)
+        stream_handler.setFormatter(formatter)
+        root.addHandler(stream_handler)
 
     if file_logging_enabled:
         resolved_log_dir = Path(log_dir if log_dir is not None else os.getenv("LOG_DIR", DEFAULT_LOG_DIR))
