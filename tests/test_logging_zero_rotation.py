@@ -116,3 +116,19 @@ def test_reconfigure_can_disable_managed_file_handlers(tmp_path) -> None:
         assert any(isinstance(handler, logging.StreamHandler) for handler in root.handlers)
     finally:
         logger_module.reset_logging_for_tests()
+
+
+def test_reconfigure_can_restore_managed_file_handlers(tmp_path) -> None:
+    logger_module.reset_logging_for_tests()
+
+    try:
+        root = logger_module.configure_logging(enable_file=True, log_dir=tmp_path)
+        logger_module.configure_logging(enable_file=False)
+        logger_module.configure_logging(enable_file=True, log_dir=tmp_path)
+
+        assert sum(
+            bool(getattr(handler, logger_module._FILE_HANDLER_ATTR, False))
+            for handler in root.handlers
+        ) == 2
+    finally:
+        logger_module.reset_logging_for_tests()
