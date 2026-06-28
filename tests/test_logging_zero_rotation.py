@@ -40,3 +40,9 @@ def test_empty_log_dir_targets_current_directory(monkeypatch, tmp_path) -> None:
         assert recorded_paths == [Path("velocity_claw.log"), Path("velocity_claw_errors.log")]
     finally:
         logger_module.reset_logging_for_tests()
+
+
+def test_empty_explicit_level_does_not_use_environment(monkeypatch) -> None:
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+
+    assert logger_module._resolve_level("") == logging.INFO
