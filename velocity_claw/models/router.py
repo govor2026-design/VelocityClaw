@@ -93,7 +93,13 @@ class ModelRouter:
             preferred = ["openrouter", "ollama", "openai"]
         else:
             preferred = self.settings.provider_order
-        return [provider for provider in preferred if self._is_provider_available(provider)]
+        remote_fallbacks = [
+            provider
+            for provider in self.settings.provider_order
+            if provider not in preferred and provider != "ollama"
+        ]
+        candidates = preferred + remote_fallbacks
+        return [provider for provider in candidates if self._is_provider_available(provider)]
 
     def _is_provider_available(self, provider: str) -> bool:
         if provider == "ollama":
