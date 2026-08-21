@@ -29,7 +29,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==9.0.3"]
+dev = [
+  "pytest==9.0.3",
+  "pytest-asyncio==1.3.0",
+]
 
 [project.scripts]
 velocity-claw = "velocity_claw.cli:main"

@@ -4,7 +4,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-import cli
+import velocity_claw.cli as cli
 from velocity_claw.config.settings import Settings
 
 
@@ -19,7 +19,7 @@ def test_validate_package_cli_json_outputs_package_status():
 
 
 def test_generate_release_notes_cli_json_outputs_path(tmp_path):
-    with patch("cli.Path.cwd", return_value=Path.cwd()):
+    with patch("velocity_claw.cli.Path.cwd", return_value=Path.cwd()):
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             cli.generate_release_notes_cli(as_json=True)
@@ -31,7 +31,7 @@ def test_generate_release_notes_cli_json_outputs_path(tmp_path):
 
 def test_release_checklist_cli_json_combines_package_readiness_and_notes(tmp_path):
     settings = Settings(workspace_root=str(tmp_path), memory_db_path=str(tmp_path / "memory.db"))
-    with patch("cli.load_settings", return_value=settings):
+    with patch("velocity_claw.cli.load_settings", return_value=settings):
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             cli.release_checklist_cli(as_json=True)

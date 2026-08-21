@@ -462,7 +462,16 @@ def create_app() -> FastAPI:
         queue_jobs = app.state.queue.list_jobs()[:10]
         provider_health = app.state.agent.router.get_provider_health()
         provider_observability = app.state.agent.router.get_router_observability()
-        git_state = app.state.agent.executor.git.inspect_repo()
+        try:
+            git_state = app.state.agent.executor.git.inspect_repo()
+        except (RuntimeError, ValueError) as exc:
+            git_state = {
+                "available": False,
+                "branch": "",
+                "is_clean": None,
+                "diff_stat": "",
+                "error": str(exc),
+            }
         release_state = app.state.release.evaluate()
 
         def badge(status: str) -> str:

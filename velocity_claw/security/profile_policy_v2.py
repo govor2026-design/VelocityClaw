@@ -28,7 +28,7 @@ PROFILE_TOOL_MODES: dict[str, dict[str, str]] = {
         "fs.write": DENY,
         "fs.append": DENY,
         "fs.replace": DENY,
-        "patch.apply": DENY,
+        "patch.apply": APPROVAL,
         "shell.run": DENY,
         "git.run": DENY,
         "http.get": DENY,

@@ -6,7 +6,7 @@ from velocity_claw.security.policy import SecurityManager, SecurityViolationErro
 
 class ExecutorSafetyShellGuardrailsV3Tests(unittest.TestCase):
     def setUp(self):
-        self.security = SecurityManager(Settings())
+        self.security = SecurityManager(Settings(shell_enabled=True))
         self.profile = self.security.get_profile("workspace_write")
 
     def test_safe_shell_command_is_allowed(self):

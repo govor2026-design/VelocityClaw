@@ -6,7 +6,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-import cli
+import velocity_claw.cli as cli
 from velocity_claw.config.settings import Settings
 from velocity_claw.core.agent import VelocityClawAgent
 
@@ -26,7 +26,7 @@ class OperatorCliAdminCommandsV2Tests(unittest.TestCase):
 
     def test_status_cli_json(self):
         settings = self.make_settings()
-        with patch("cli.load_settings", return_value=settings):
+        with patch("velocity_claw.cli.load_settings", return_value=settings):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 cli.main_args = None
@@ -40,7 +40,7 @@ class OperatorCliAdminCommandsV2Tests(unittest.TestCase):
         settings = self.make_settings()
         agent = VelocityClawAgent(settings)
         agent.memory.create_run("demo task")
-        with patch("cli.build_agent", return_value=agent):
+        with patch("velocity_claw.cli.build_agent", return_value=agent):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 cli.list_runs_cli(limit=5, as_json=True)
@@ -64,7 +64,7 @@ class OperatorCliAdminCommandsV2Tests(unittest.TestCase):
             "completed_at": "2026-04-26T00:00:01",
         })
         agent.memory.update_run_status(run_id, "failed")
-        with patch("cli.build_agent", return_value=agent):
+        with patch("velocity_claw.cli.build_agent", return_value=agent):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 cli.retry_context_cli(run_id, as_json=True)

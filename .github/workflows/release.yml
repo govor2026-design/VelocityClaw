@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           pip-audit -r requirements.txt
 
-      - name: Resolve release tag and target
+      - name: Validate release tag matches VERSION
         id: release
         env:
           MANUAL_TAG: ${{ inputs.tag }}

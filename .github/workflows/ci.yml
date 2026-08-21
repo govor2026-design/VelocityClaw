@@ -33,7 +33,9 @@ jobs:
         run: python scripts/validate_package.py
 
       - name: Run tests
-        run: pytest -q 2>&1 | tee pytest-output.txt
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tee pytest-output.txt
 
       - name: Upload pytest failure output
         if: failure()

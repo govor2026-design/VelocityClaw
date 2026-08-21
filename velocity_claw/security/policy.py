@@ -62,7 +62,7 @@ class SecurityManager:
 
     def validate_command(self, command: str, profile: AccessProfile) -> str:
         if not self.settings.shell_enabled:
-            raise SecurityViolationError("Shell commands disabled")
+            raise SecurityViolationError("Shell execution is disabled")
         if not profile.workspace_write:
             raise SecurityViolationError("Shell execution not allowed in current profile")
 
@@ -105,7 +105,7 @@ class SecurityManager:
 
     def validate_git_command(self, command: str, profile: AccessProfile) -> str:
         if not self.settings.git_enabled:
-            raise SecurityViolationError("Git commands disabled")
+            raise SecurityViolationError("Git operations disabled")
         if not profile.git_safe:
             raise SecurityViolationError("Git operations not allowed in current profile")
 

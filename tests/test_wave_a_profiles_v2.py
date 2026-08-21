@@ -27,7 +27,8 @@ class ExecutionProfilesV2Tests(unittest.TestCase):
         manager = ExecutionProfileManager(settings)
         info = manager.explain_tool_access("patch.apply")
         self.assertEqual(info["profile"], "safe")
-        self.assertFalse(info["allowed"])
+        self.assertTrue(info["allowed"])
+        self.assertFalse(info["allowed_now"])
 
     def test_api_has_profile_manager(self):
         app = create_app()

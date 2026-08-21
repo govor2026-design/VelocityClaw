@@ -55,7 +55,7 @@ def test_compact_step_inspector_limits_result_preview():
     assert inspector["artifact_count"] == 1
     assert inspector["steps"][1]["error"] == "assertion failed"
     assert len(inspector["steps"][1]["result_preview"]) == 240
-    assert inspector["steps"][1]["result_preview"].endswith("...")
+    assert inspector["steps"][1]["result_preview"].endswith("…")
 
 
 def test_runs_inspector_renders_filters_and_selected_steps():

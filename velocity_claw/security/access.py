@@ -52,7 +52,7 @@ class ExecutionProfileManager:
                 git_write=False,
                 network=False,
                 approval_workflow=True,
-                description="Inspection-first profile. Read and test tools are allowed; mutation, shell, git write, and network tools are hard denied.",
+                description="Inspection-first profile. Read and test tools are allowed; patch application requires approval, while direct writes, shell, git write, and network tools are denied.",
             ),
             "dev": ExecutionProfile(
                 "dev",
@@ -157,7 +157,7 @@ class ExecutionProfileManager:
         return decision
 
     def is_tool_allowed(self, tool: str, profile_name: Optional[str] = None) -> bool:
-        return bool(self.evaluate_tool(tool, profile_name)["granted"])
+        return bool(self.evaluate_tool(tool, profile_name)["allowed_now"])
 
     def explain_tool_access(self, tool: str, profile_name: Optional[str] = None) -> dict:
         profile = self.get_profile(profile_name)
