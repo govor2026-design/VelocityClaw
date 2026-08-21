@@ -242,17 +242,31 @@ class RouterHardeningV2Tests(unittest.IsolatedAsyncioTestCase):
 
         response = await router.call_gemini("hello", "analysis")
 
-        self.assertEqual(response["model"], "gemini-pro")
+        self.assertEqual(response["model"], "gemini-2.5-flash")
         url = router._post_json.await_args.args[0]
         kwargs = router._post_json.await_args.kwargs
         self.assertEqual(
             url,
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
         )
         self.assertNotIn(secret, url)
         self.assertEqual(kwargs["headers"]["x-goog-api-key"], secret)
         self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
         await router.close()
+
+    async def test_gemini_model_can_be_configured(self):
+        router = ModelRouter(
+            Settings(gemini_api_key="secret", gemini_model="gemini-custom")
+        )
+        router._post_json = AsyncMock(return_value={})
+
+        response = await router.call_gemini("hello", "analysis")
+
+        self.assertEqual(response["model"], "gemini-custom")
+        self.assertEqual(
+            router._post_json.await_args.args[0],
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-custom:generateContent",
+        )
 
 
 if __name__ == "__main__":

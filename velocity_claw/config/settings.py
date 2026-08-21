@@ -73,6 +73,7 @@ class Settings:
     openrouter_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-2.5-flash"
     ollama_url: str = "http://127.0.0.1:11434"
     allowed_users: List[str] = field(default_factory=list)
     default_model: str = "code"
@@ -114,6 +115,7 @@ class Settings:
         self.openrouter_api_key = get_env("OPENROUTER_API_KEY", self.openrouter_api_key)
         self.anthropic_api_key = get_env("ANTHROPIC_API_KEY", self.anthropic_api_key)
         self.gemini_api_key = get_env("GEMINI_API_KEY", self.gemini_api_key)
+        self.gemini_model = get_env("GEMINI_MODEL", self.gemini_model).strip()
         self.ollama_url = get_env("OLLAMA_URL", self.ollama_url)
         self.allowed_users = parse_list(get_env("ALLOWED_USERS"))
         self.default_model = get_env("DEFAULT_MODEL", self.default_model).strip()
@@ -146,6 +148,8 @@ class Settings:
             raise SettingsValidationError("EXECUTION_PROFILE must be one of: safe, dev, owner")
         if not self.default_model:
             raise SettingsValidationError("DEFAULT_MODEL must not be empty")
+        if not self.gemini_model:
+            raise SettingsValidationError("GEMINI_MODEL must not be empty")
         if self.telegram_token and self.telegram_token == "your-telegram-bot-token":
             raise SettingsValidationError("TELEGRAM_TOKEN still contains placeholder value")
         if self.telegram_chat_id and not str(self.telegram_chat_id).lstrip("-").isdigit():
