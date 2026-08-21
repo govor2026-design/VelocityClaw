@@ -37,6 +37,9 @@ class VelocityClawAgent:
         )
         self.auto_fix = AutoFixLoop(self.executor.patch, self.executor.test_runner, self.executor.code_nav)
 
+    async def close(self) -> None:
+        await self.router.close()
+
     def _get_profile_for_tool(self, tool: str) -> str:
         if tool in ["http.get", "http.post"]:
             return "network_allowlist"

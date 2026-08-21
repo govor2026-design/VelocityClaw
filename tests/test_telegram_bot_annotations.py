@@ -1,4 +1,7 @@
+import asyncio
+from types import SimpleNamespace
 from typing import get_type_hints
+from unittest.mock import AsyncMock
 
 from velocity_claw.telegram_bot.bot import VelocityClawTelegramBot
 
@@ -19,6 +22,16 @@ def test_polling_entrypoint_declares_none_return() -> None:
     hints = get_type_hints(VelocityClawTelegramBot.run)
 
     assert hints["return"] is type(None)
+
+
+def test_post_shutdown_closes_agent_resources() -> None:
+    close = AsyncMock()
+    bot = object.__new__(VelocityClawTelegramBot)
+    bot.agent = SimpleNamespace(close=close)
+
+    asyncio.run(bot._shutdown(None))
+
+    close.assert_awaited_once_with()
 
 
 def test_report_mapping_annotation_is_parameterized() -> None:

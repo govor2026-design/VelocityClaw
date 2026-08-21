@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from inspect import isawaitable
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
@@ -71,10 +73,17 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
             app.state.logger.info("Recovered and scheduled %s persisted queue jobs", len(scheduled))
 
     async def shutdown_queue_workers() -> None:
-        timeout = getattr(settings, "queue_shutdown_timeout_seconds", 10) if settings is not None else 10
-        app.state.queue_shutdown = await app.state.queue.shutdown(timeout_seconds=timeout, cancel_running=True)
-        if app.state.queue_shutdown.get("timed_out"):
-            app.state.logger.warning("Queue shutdown timed out with %s pending tasks", app.state.queue_shutdown["pending_tasks"])
+        try:
+            timeout = getattr(settings, "queue_shutdown_timeout_seconds", 10) if settings is not None else 10
+            app.state.queue_shutdown = await app.state.queue.shutdown(timeout_seconds=timeout, cancel_running=True)
+            if app.state.queue_shutdown.get("timed_out"):
+                app.state.logger.warning("Queue shutdown timed out with %s pending tasks", app.state.queue_shutdown["pending_tasks"])
+        finally:
+            close_agent = getattr(app.state.agent, "close", None)
+            if close_agent is not None:
+                close_result = close_agent()
+                if isawaitable(close_result):
+                    await close_result
 
     app.router.add_event_handler("startup", startup_queue_recovery)
     app.router.add_event_handler("shutdown", shutdown_queue_workers)
