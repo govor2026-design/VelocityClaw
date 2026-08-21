@@ -1,7 +1,7 @@
 import sqlite3
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 from velocity_claw.config.settings import Settings
@@ -284,7 +284,7 @@ class MemoryStore:
         retention_days = days if days is not None else self.settings.memory_retention_days
         min_runs = keep_min_runs if keep_min_runs is not None else self.settings.memory_retention_min_runs
         do_vacuum = self.settings.memory_cleanup_vacuum if vacuum is None else vacuum
-        cutoff = (datetime.utcnow() - timedelta(days=retention_days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
         deleted: dict[str, int] = {}
         with sqlite3.connect(self.db_path) as conn:
             keep_rows = conn.execute(

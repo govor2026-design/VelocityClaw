@@ -1,6 +1,5 @@
 import sqlite3
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 from velocity_claw.config.settings import Settings
 from velocity_claw.memory.store import MemoryStore
@@ -48,7 +47,7 @@ def count_rows(db_path, table):
 
 def test_cleanup_retention_deletes_old_runs_and_children(tmp_path):
     store = make_store(tmp_path)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     old = (now - timedelta(days=90)).isoformat()
     fresh = now.isoformat()
     with sqlite3.connect(store.db_path) as conn:
@@ -72,7 +71,7 @@ def test_cleanup_retention_deletes_old_runs_and_children(tmp_path):
 
 def test_cleanup_retention_keeps_minimum_newest_runs_even_when_old(tmp_path):
     store = make_store(tmp_path)
-    old = (datetime.utcnow() - timedelta(days=90)).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
     with sqlite3.connect(store.db_path) as conn:
         insert_run(conn, "old-1", old)
         insert_run(conn, "old-2", old)

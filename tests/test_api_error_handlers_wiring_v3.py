@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from velocity_claw.api.app import app as uvicorn_app
 from velocity_claw.api.app import create_app
 from velocity_claw.api.errors import REQUEST_ID_HEADER
 
@@ -9,6 +10,10 @@ from velocity_claw.api.errors import REQUEST_ID_HEADER
 def test_hardened_app_factory_installs_error_handlers():
     app = create_app()
     assert app.state.api_error_handlers_installed is True
+
+
+def test_module_exposes_default_uvicorn_app():
+    assert uvicorn_app.state.api_error_handlers_installed is True
 
 
 def test_hardened_app_adds_request_id_header_on_real_health_endpoint():

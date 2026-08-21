@@ -2,7 +2,6 @@ import sqlite3
 from pathlib import Path
 
 from velocity_claw.config.settings import Settings
-from velocity_claw.memory.context_v2 import ProjectContextV2  # noqa: F401 - installs profile schema
 from velocity_claw.memory.store import MemoryStore
 
 
