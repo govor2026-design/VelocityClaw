@@ -180,7 +180,7 @@ class ModelRouter:
                     return await response.json()
             except aiohttp.ClientResponseError as e:
                 last_error = ProviderRequestError(f"HTTP {e.status}: {e.message}")
-                if e.status < 500:
+                if e.status < 500 and e.status != 429:
                     raise last_error from e
             except asyncio.TimeoutError:
                 last_error = ProviderRequestError(
