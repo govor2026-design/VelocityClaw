@@ -246,12 +246,16 @@ class ModelRouter:
     async def call_gemini(self, prompt: str, task_type: str) -> Dict:
         if not self.settings.gemini_api_key:
             raise ProviderNotConfiguredError("Gemini API key not configured")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={self.settings.gemini_api_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+        headers = {
+            "x-goog-api-key": self.settings.gemini_api_key,
+            "Content-Type": "application/json",
+        }
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.2, "maxOutputTokens": 700},
         }
-        data = await self._post_json(url, payload=payload)
+        data = await self._post_json(url, headers=headers, payload=payload)
         data.setdefault("model", "gemini-pro")
         return data
 
