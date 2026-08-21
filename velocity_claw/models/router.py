@@ -59,13 +59,14 @@ class ModelRouter:
             self.logger.info("Routing %s task to provider %s", task_type, provider)
             try:
                 response = await self._call_provider(provider, prompt, task_type)
+                normalized = self._normalize_response(provider, response)
                 self._record_provider_success(provider, task_type)
                 route_attempt["attempts"].append({"provider": provider, "status": "success"})
                 route_attempt["selected_provider"] = provider
                 route_attempt["status"] = "success"
                 route_attempt["completed_at"] = time.time()
                 self._record_route_attempt(route_attempt)
-                return self._normalize_response(provider, response)
+                return normalized
             except (ProviderNotConfiguredError, ProviderRequestError, ProviderResponseError) as e:
                 self.logger.warning("Provider %s failed: %s", provider, e)
                 self._record_provider_failure(provider, str(e), task_type)
@@ -180,7 +181,7 @@ class ModelRouter:
             except aiohttp.ClientResponseError as e:
                 last_error = ProviderRequestError(f"HTTP {e.status}: {e.message}")
                 if e.status < 500:
-                    raise last_error
+                    raise last_error from e
             except aiohttp.ClientError as e:
                 last_error = ProviderRequestError(str(e))
 
@@ -283,4 +284,4 @@ class ModelRouter:
                 "raw": data,
             }
         except (IndexError, KeyError, TypeError) as e:
-            raise ProviderResponseError(f"Invalid response format: {e}")
+            raise ProviderResponseError(f"Invalid response format: {e}") from e

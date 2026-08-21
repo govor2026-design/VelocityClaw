@@ -76,6 +76,38 @@ class RouterHardeningV2Tests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(created), 1)
             await router.close()
 
+    async def test_malformed_response_is_only_recorded_as_failure(self):
+        settings = Settings(openai_api_key="x", openrouter_api_key="y")
+
+        class FakeRouter(ModelRouter):
+            async def call_openai(self, prompt: str, task_type: str):
+                return {}
+
+            async def call_openrouter(self, prompt: str, task_type: str):
+                return {
+                    "choices": [{"message": {"content": "fallback ok"}}],
+                    "usage": {},
+                    "model": "fake-openrouter",
+                }
+
+        router = FakeRouter(settings)
+        result = await router.route("planning", "hello")
+
+        self.assertEqual(result["provider"], "openrouter")
+        openai_health = router.get_provider_health()["openai"]
+        self.assertEqual(openai_health["requests"], 1)
+        self.assertEqual(openai_health["successes"], 0)
+        self.assertEqual(openai_health["failures"], 1)
+        self.assertEqual(len(router.route_history), 1)
+        self.assertEqual(
+            router.route_history[0]["attempts"],
+            [
+                {"provider": "openai", "status": "failed", "error": "Empty response from provider"},
+                {"provider": "openrouter", "status": "success"},
+            ],
+        )
+        await router.close()
+
 
 if __name__ == "__main__":
     unittest.main()
