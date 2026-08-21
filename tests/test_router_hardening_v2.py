@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
 
@@ -169,6 +169,27 @@ class RouterHardeningV2Tests(unittest.IsolatedAsyncioTestCase):
                 {"provider": "openrouter", "status": "success"},
             ],
         )
+        await router.close()
+
+    async def test_gemini_api_key_is_sent_in_header_not_url(self):
+        secret = "gemini-secret-value"
+        router = ModelRouter(Settings(gemini_api_key=secret))
+        router._post_json = AsyncMock(
+            return_value={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
+        )
+
+        response = await router.call_gemini("hello", "analysis")
+
+        self.assertEqual(response["model"], "gemini-pro")
+        url = router._post_json.await_args.args[0]
+        kwargs = router._post_json.await_args.kwargs
+        self.assertEqual(
+            url,
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+        )
+        self.assertNotIn(secret, url)
+        self.assertEqual(kwargs["headers"]["x-goog-api-key"], secret)
+        self.assertEqual(kwargs["headers"]["Content-Type"], "application/json")
         await router.close()
 
 
