@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
@@ -23,6 +21,7 @@ from velocity_claw.api.run_detail_v2 import build_artifact_index, build_run_deta
 from velocity_claw.api.server import ApprovalDecisionRequest, create_app as create_base_app
 from velocity_claw.api.version import build_version_payload
 from velocity_claw.core.queue_persistence import persist_queue_job
+from velocity_claw.timestamps import utc_now_iso
 
 
 def install_version_endpoint(app: FastAPI) -> None:
@@ -36,7 +35,7 @@ def _prepare_forced_retry(queue, job) -> None:
         return
     previous_attempts = job.attempts
     job.attempts = 0
-    job.updated_at = datetime.now().isoformat()
+    job.updated_at = utc_now_iso()
     job.history.append(
         {
             "status": "queued",

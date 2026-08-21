@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Callable
+
+from velocity_claw.timestamps import utc_now_iso
 
 
 class StepExecutionGuard:
@@ -54,7 +55,7 @@ class StepExecutionGuard:
             "result": {"policy": policy},
             "error": error,
             "started_at": started_at,
-            "completed_at": datetime.now().isoformat(),
+            "completed_at": utc_now_iso(),
         }
 
     async def execute(
@@ -66,7 +67,7 @@ class StepExecutionGuard:
         approved: bool = False,
         started_at: str | None = None,
     ) -> dict:
-        started_at = started_at or datetime.now().isoformat()
+        started_at = started_at or utc_now_iso()
         policy = self.evaluate(step, profile_name, approved=approved)
 
         if policy["blocked"]:
@@ -99,7 +100,7 @@ class StepExecutionGuard:
 
         result = await self.executor.execute_step(step, context)
         result["started_at"] = result.get("started_at") or started_at
-        result["completed_at"] = datetime.now().isoformat()
+        result["completed_at"] = utc_now_iso()
         result["policy"] = {
             "profile": policy["profile"],
             "mode": policy["mode"],

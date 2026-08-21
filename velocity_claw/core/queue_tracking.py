@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 from typing import Any
+
+from velocity_claw.timestamps import utc_now_iso
 
 
 def install_direct_run_tracking(queue: Any) -> None:
@@ -31,7 +32,7 @@ def install_direct_run_tracking(queue: Any) -> None:
         if job is None or job.status != "queued":
             return job
 
-        scheduled_at = datetime.now().isoformat()
+        scheduled_at = utc_now_iso()
         job.scheduled_at = scheduled_at
         job.updated_at = scheduled_at
         queue._append_history(job, "queued", "legacy_worker_task_tracked")

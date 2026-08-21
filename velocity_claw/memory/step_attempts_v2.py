@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
-from datetime import datetime
 from typing import Any
+
+from velocity_claw.timestamps import utc_now_iso
 
 
 def effective_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -154,7 +155,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
                     status,
                     json.dumps(result, ensure_ascii=False) if result is not None else None,
                     error,
-                    datetime.now().isoformat(),
+                    utc_now_iso(),
                     run_id,
                     step_id,
                 ),

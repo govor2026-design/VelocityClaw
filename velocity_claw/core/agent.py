@@ -1,6 +1,5 @@
 import json
 from collections import Counter
-from datetime import datetime
 from typing import Dict, Optional
 from velocity_claw.config.settings import Settings
 from velocity_claw.logs.logger import get_logger
@@ -14,6 +13,7 @@ from velocity_claw.security.access import ExecutionProfileManager, ApprovalManag
 from velocity_claw.core.auto_fix import AutoFixLoop
 from velocity_claw.core.modes import build_mode_task, HIGH_LEVEL_MODES
 from velocity_claw.core.step_guard import StepExecutionGuard
+from velocity_claw.timestamps import utc_now_iso
 
 
 class VelocityClawAgent:
@@ -193,7 +193,7 @@ class VelocityClawAgent:
             for step in plan["steps"]:
                 step_id = step["id"]
                 self.logger.info("Run %s: Executing step %s", run_id, step_id)
-                started_at = datetime.now().isoformat()
+                started_at = utc_now_iso()
                 outcome = await self.step_guard.execute(
                     step,
                     context or {},
@@ -242,7 +242,7 @@ class VelocityClawAgent:
 
     def _pause_for_approval(self, run_id: str, task: str, step: dict, started_at: str, profile_name: str, results: list, boundary_type: str) -> dict:
         step_id = step["id"]
-        completed_at = datetime.now().isoformat()
+        completed_at = utc_now_iso()
         approval = self.approvals.build_record(step, profile_name=profile_name)
         step_result = {
             "id": step_id,
@@ -322,7 +322,7 @@ class VelocityClawAgent:
             "decision": "approved",
             "actor": actor,
             "reason": reason,
-            "decided_at": datetime.now().isoformat(),
+            "decided_at": utc_now_iso(),
         }
         self.memory.update_step_status(run_id, step_id, "approved", result=payload)
         self.memory.save_approval_decision(run_id, step_id, "approved", actor=actor, reason=reason, payload=payload)
@@ -338,7 +338,7 @@ class VelocityClawAgent:
             "decision": "rejected",
             "actor": actor,
             "reason": reason,
-            "decided_at": datetime.now().isoformat(),
+            "decided_at": utc_now_iso(),
         }
         self.memory.update_step_status(run_id, step_id, "rejected", result=payload, error="Rejected by reviewer")
         self.memory.save_approval_decision(run_id, step_id, "rejected", actor=actor, reason=reason, payload=payload)
@@ -371,7 +371,7 @@ class VelocityClawAgent:
         executed = []
         profile_name = self._profile_for_run(run)
         for index, step in enumerate(steps[start_index:], start=start_index):
-            started_at = datetime.now().isoformat()
+            started_at = utc_now_iso()
             outcome = await self.step_guard.execute(
                 step,
                 {},
