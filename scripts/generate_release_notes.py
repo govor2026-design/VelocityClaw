@@ -6,6 +6,8 @@ from velocity_claw.release_notes import (
     write_release_notes,
 )
 
+__all__ = ["extract_changelog_section", "generate_release_notes", "write_release_notes"]
+
 
 def main() -> int:
     path = write_release_notes()

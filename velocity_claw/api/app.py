@@ -333,3 +333,6 @@ def create_app() -> FastAPI:
     app.state.dashboard_v2_installed = True
     app.state.api_key_auth_installed = True
     return app
+
+
+app = create_app()
