@@ -21,6 +21,7 @@ def test_prefixed_deployment_env_values_are_honored():
         "VELOCITY_CLAW_WORKSPACE_ROOT": "/srv/velocity-claw/workspace",
         "VELOCITY_CLAW_MEMORY_DB_PATH": "/var/lib/velocity-claw/memory.db",
         "VELOCITY_CLAW_EXECUTION_PROFILE": "safe",
+        "VELOCITY_CLAW_GEMINI_MODEL": "gemini-custom",
     }
     with patch.dict("os.environ", env, clear=True):
         settings = Settings()
@@ -33,6 +34,7 @@ def test_prefixed_deployment_env_values_are_honored():
     assert settings.workspace_root == "/srv/velocity-claw/workspace"
     assert settings.memory_db_path == "/var/lib/velocity-claw/memory.db"
     assert settings.execution_profile == "safe"
+    assert settings.gemini_model == "gemini-custom"
 
 
 def test_prefixed_env_values_override_legacy_values():
