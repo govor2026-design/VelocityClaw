@@ -8,6 +8,43 @@ from velocity_claw.config.settings import Settings
 from velocity_claw.models.router import ModelRouter, ProviderRequestError
 
 
+class FakeHttpResponse:
+    def __init__(self, status, payload=None, message=""):
+        self.status = status
+        self.payload = payload or {}
+        self.message = message
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    def raise_for_status(self):
+        if self.status >= 400:
+            raise aiohttp.ClientResponseError(
+                None,
+                (),
+                status=self.status,
+                message=self.message,
+            )
+
+    async def json(self):
+        return self.payload
+
+
+class FakeHttpSession:
+    closed = False
+
+    def __init__(self, *responses):
+        self.calls = 0
+        self.responses = list(responses)
+
+    def post(self, *args, **kwargs):
+        self.calls += 1
+        return self.responses.pop(0)
+
+
 class RouterHardeningV2Tests(unittest.IsolatedAsyncioTestCase):
     async def test_route_fallback_records_provider_health(self):
         settings = Settings(openai_api_key="x", openrouter_api_key="y")
@@ -170,6 +207,31 @@ class RouterHardeningV2Tests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         await router.close()
+
+    async def test_rate_limit_response_is_retried(self):
+        settings = Settings(provider_max_retries=2, provider_retry_backoff_ms=0)
+        router = ModelRouter(settings)
+        session = FakeHttpSession(
+            FakeHttpResponse(429, message="Too Many Requests"),
+            FakeHttpResponse(200, {"result": "ok"}),
+        )
+        router._get_session = AsyncMock(return_value=session)
+
+        result = await router._post_json("https://provider.invalid", payload={})
+
+        self.assertEqual(result, {"result": "ok"})
+        self.assertEqual(session.calls, 2)
+
+    async def test_non_retryable_client_error_fails_immediately(self):
+        settings = Settings(provider_max_retries=2, provider_retry_backoff_ms=0)
+        router = ModelRouter(settings)
+        session = FakeHttpSession(FakeHttpResponse(401, message="Unauthorized"))
+        router._get_session = AsyncMock(return_value=session)
+
+        with self.assertRaisesRegex(ProviderRequestError, "HTTP 401: Unauthorized"):
+            await router._post_json("https://provider.invalid", payload={})
+
+        self.assertEqual(session.calls, 1)
 
     async def test_gemini_api_key_is_sent_in_header_not_url(self):
         secret = "gemini-secret-value"
