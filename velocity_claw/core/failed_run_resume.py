@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
 from types import MethodType
 from typing import Any
 
 from velocity_claw.memory.step_attempts_v2 import effective_steps
+from velocity_claw.timestamps import utc_now_iso
 
 
 class FailedRunResumeError(RuntimeError):
@@ -156,7 +156,7 @@ class FailedRunResumer:
             "execution_profile": preview["execution_profile"],
             "actor": actor,
             "reason": reason,
-            "started_at": datetime.now().isoformat(),
+            "started_at": utc_now_iso(),
         }
         self.agent.memory.save_artifact(
             run["run_id"],
@@ -187,7 +187,7 @@ class FailedRunResumer:
             "status": status,
             "executed_step_ids": [item.get("id") for item in executed],
             "boundary_step_id": boundary_step_id,
-            "completed_at": datetime.now().isoformat(),
+            "completed_at": utc_now_iso(),
         }
         self.agent.memory.save_artifact(
             run_id,
@@ -217,8 +217,8 @@ class FailedRunResumer:
             "status": "pending_approval",
             "result": approval,
             "error": None,
-            "started_at": datetime.now().isoformat(),
-            "completed_at": datetime.now().isoformat(),
+            "started_at": utc_now_iso(),
+            "completed_at": utc_now_iso(),
             "attempt_no": attempt_no,
             "phase": "failed_resume",
         }
@@ -294,7 +294,7 @@ class FailedRunResumer:
                 context,
                 profile_name,
                 approved=approved,
-                started_at=datetime.now().isoformat(),
+                started_at=utc_now_iso(),
             )
             if outcome["state"] == "approval_required":
                 paused = self._pause_for_approval(

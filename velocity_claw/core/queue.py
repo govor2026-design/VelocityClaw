@@ -5,9 +5,10 @@ import json
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
+
+from velocity_claw.timestamps import utc_now_iso
 
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
@@ -16,7 +17,7 @@ Runner = Callable[[str, Optional[dict]], Awaitable[dict]]
 
 
 def _now() -> str:
-    return datetime.now().isoformat()
+    return utc_now_iso()
 
 
 def _load_json(value: Optional[str], default: Any) -> Any:

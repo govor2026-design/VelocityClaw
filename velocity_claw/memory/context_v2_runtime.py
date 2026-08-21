@@ -5,8 +5,9 @@ import math
 import re
 import sqlite3
 from collections import Counter
-from datetime import datetime
 from typing import Any, Iterable
+
+from velocity_claw.timestamps import utc_now_iso
 
 
 TRACE_NOTE_TYPES = {
@@ -45,7 +46,7 @@ ACTIVE_RUN_STATUSES = {"running", "resuming_after_approval"}
 
 
 def _now() -> str:
-    return datetime.now().isoformat()
+    return utc_now_iso()
 
 
 def _safe_json(value: Any) -> str:

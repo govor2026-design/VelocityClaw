@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from typing import Any
+
+from velocity_claw.timestamps import utc_now_iso
 
 
 def _now() -> str:
-    return datetime.now().isoformat()
+    return utc_now_iso()
 
 
 def _json_artifact(memory: Any, run_id: str, name: str, payload: dict[str, Any], *, step_id: int | None, artifact_type: str) -> None:

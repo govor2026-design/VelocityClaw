@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 from velocity_claw.config.settings import Settings
+from velocity_claw.timestamps import utc_now_iso
 
 
 class MemoryStore:
@@ -145,7 +146,7 @@ class MemoryStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE runs SET status = ?, completed_at = ? WHERE run_id = ?",
-                (status, datetime.now().isoformat() if status in ["completed", "failed", "rejected"] else None, run_id)
+                (status, utc_now_iso() if status in ["completed", "failed", "rejected"] else None, run_id)
             )
 
     def load_run(self, run_id: str) -> Optional[Dict]:
@@ -584,5 +585,5 @@ class MemoryStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE steps SET status = ?, result = ?, error = ?, completed_at = ? WHERE run_id = ? AND step_id = ?",
-                (status, json.dumps(result, ensure_ascii=False) if result is not None else None, error, datetime.now().isoformat(), run_id, step_id),
+                (status, json.dumps(result, ensure_ascii=False) if result is not None else None, error, utc_now_iso(), run_id, step_id),
             )
