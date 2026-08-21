@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import patch
 
@@ -103,6 +104,68 @@ class RouterHardeningV2Tests(unittest.IsolatedAsyncioTestCase):
             router.route_history[0]["attempts"],
             [
                 {"provider": "openai", "status": "failed", "error": "Empty response from provider"},
+                {"provider": "openrouter", "status": "success"},
+            ],
+        )
+        await router.close()
+
+    async def test_timeout_retries_then_falls_back_to_next_provider(self):
+        settings = Settings(
+            openai_api_key="x",
+            openrouter_api_key="y",
+            provider_max_retries=2,
+            provider_retry_backoff_ms=0,
+            provider_request_timeout_seconds=7,
+        )
+
+        class TimeoutRequest:
+            async def __aenter__(self):
+                raise asyncio.TimeoutError("provider stalled")
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        class TimeoutSession:
+            closed = False
+
+            def __init__(self):
+                self.calls = 0
+
+            def post(self, *args, **kwargs):
+                self.calls += 1
+                return TimeoutRequest()
+
+        class FakeRouter(ModelRouter):
+            def __init__(self, settings):
+                super().__init__(settings)
+                self.timeout_session = TimeoutSession()
+
+            async def _get_session(self):
+                return self.timeout_session
+
+            async def call_openrouter(self, prompt: str, task_type: str):
+                return {
+                    "choices": [{"message": {"content": "fallback ok"}}],
+                    "usage": {},
+                    "model": "fake-openrouter",
+                }
+
+        router = FakeRouter(settings)
+        result = await router.route("planning", "hello")
+
+        self.assertEqual(result["provider"], "openrouter")
+        self.assertEqual(router.timeout_session.calls, 3)
+        openai_health = router.get_provider_health()["openai"]
+        self.assertEqual(openai_health["requests"], 1)
+        self.assertEqual(openai_health["failures"], 1)
+        self.assertEqual(
+            router.route_history[0]["attempts"],
+            [
+                {
+                    "provider": "openai",
+                    "status": "failed",
+                    "error": "Provider request timed out after 7s",
+                },
                 {"provider": "openrouter", "status": "success"},
             ],
         )

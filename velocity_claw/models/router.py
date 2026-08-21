@@ -182,6 +182,10 @@ class ModelRouter:
                 last_error = ProviderRequestError(f"HTTP {e.status}: {e.message}")
                 if e.status < 500:
                     raise last_error from e
+            except asyncio.TimeoutError:
+                last_error = ProviderRequestError(
+                    f"Provider request timed out after {self.settings.provider_request_timeout_seconds}s"
+                )
             except aiohttp.ClientError as e:
                 last_error = ProviderRequestError(str(e))
 
