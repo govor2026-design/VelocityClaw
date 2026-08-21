@@ -14,8 +14,16 @@ class VelocityClawTelegramBot:
         self.settings = settings
         self.logger = get_logger("velocity_claw.telegram")
         self.agent = VelocityClawAgent(settings=settings)
-        self.app = ApplicationBuilder().token(settings.telegram_token).build()
+        self.app = (
+            ApplicationBuilder()
+            .token(settings.telegram_token)
+            .post_shutdown(self._shutdown)
+            .build()
+        )
         self._register_handlers()
+
+    async def _shutdown(self, _application) -> None:
+        await self.agent.close()
 
     def _register_handlers(self) -> None:
         from telegram.ext import CommandHandler, MessageHandler, filters

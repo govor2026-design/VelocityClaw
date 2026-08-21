@@ -18,10 +18,14 @@ class QueueSettings:
 class FakeAgent:
     def __init__(self):
         self.calls = []
+        self.close_calls = 0
 
     async def run_task(self, task, context=None):
         self.calls.append((task, context))
         return {"status": "completed", "task": task}
+
+    async def close(self):
+        self.close_calls += 1
 
 
 class FakeLogger:
@@ -64,6 +68,15 @@ def test_queue_runtime_exposes_orchestrator_state(tmp_path: Path):
         assert runtime["max_concurrency"] == 1
         assert runtime["tracked_tasks"] == 0
         assert runtime["active_slots"] == {}
+
+
+def test_api_shutdown_closes_agent_resources(tmp_path: Path):
+    app = build_app(tmp_path)
+
+    with TestClient(app):
+        pass
+
+    assert app.state.agent.close_calls == 1
 
 
 def test_pause_and_resume_control_queue_scheduling(tmp_path: Path):
