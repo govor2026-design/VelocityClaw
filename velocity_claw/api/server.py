@@ -178,15 +178,24 @@ def create_app() -> FastAPI:
         except SecurityViolationError as e:
             app.state.metrics.incr("tasks_failed")
             app.state.logger.warning("Task blocked by security policy: %s", e)
-            raise HTTPException(status_code=403, detail={"status": "failed", "error": "security_block", "detail": str(e)})
+            raise HTTPException(
+                status_code=403,
+                detail={"status": "failed", "error": "security_block", "detail": str(e)},
+            ) from e
         except ValueError as e:
             app.state.metrics.incr("tasks_failed")
             app.state.logger.warning("Task rejected: %s", e)
-            raise HTTPException(status_code=400, detail={"status": "failed", "error": "invalid_request", "detail": str(e)})
-        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "failed", "error": "invalid_request", "detail": str(e)},
+            ) from e
+        except Exception as exc:
             app.state.metrics.incr("tasks_failed")
-            app.state.logger.error("Task execution failed: %s", e)
-            raise HTTPException(status_code=500, detail={"status": "failed", "error": "internal_error", "detail": str(e)})
+            app.state.logger.exception("Task execution failed")
+            raise HTTPException(
+                status_code=500,
+                detail={"status": "failed", "error": "internal_error", "detail": "Internal server error"},
+            ) from exc
         finally:
             app.state.metrics.observe_task_duration(int((time.monotonic() - started) * 1000))
             refresh_runtime_metrics()
