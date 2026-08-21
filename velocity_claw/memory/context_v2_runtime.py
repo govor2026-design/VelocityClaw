@@ -68,10 +68,13 @@ def normalize_tokens(value: str | None) -> set[str]:
         return set()
     tokens: set[str] = set()
     for raw in TOKEN_RE.findall(value.lower()):
-        token = _normalize_token(raw.strip("./:-_"))
-        if len(token) < 2 or token in STOP_WORDS:
-            continue
-        tokens.add(token)
+        cleaned = raw.strip("./:-_")
+        parts = re.split(r"[._/:-]+", cleaned)
+        for part in parts:
+            token = _normalize_token(part)
+            if len(token) < 2 or token in STOP_WORDS:
+                continue
+            tokens.add(token)
     return tokens
 
 

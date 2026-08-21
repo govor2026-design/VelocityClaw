@@ -1,6 +1,6 @@
-import os
+"""Shared pytest configuration.
 
-
-def pytest_configure():
-    os.environ.setdefault("SHELL_ENABLED", "true")
-    os.environ.setdefault("GIT_ENABLED", "true")
+Runtime capability flags are intentionally not forced here. Individual tests
+must opt into shell or git access explicitly so production-safe defaults remain
+testable and test order cannot change security-policy results.
+"""

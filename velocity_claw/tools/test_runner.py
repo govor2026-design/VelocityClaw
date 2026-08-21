@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -92,6 +94,16 @@ class TestRunnerTool:
 
         start = time.monotonic()
         try:
+            process_env = os.environ.copy()
+            # Do not resolve the interpreter symlink: in a virtual environment
+            # the pytest launcher lives beside the venv's python executable.
+            interpreter_bin = str(Path(sys.executable).parent)
+            current_path = process_env.get("PATH", "")
+            process_env["PATH"] = (
+                f"{interpreter_bin}{os.pathsep}{current_path}"
+                if current_path
+                else interpreter_bin
+            )
             completed = subprocess.run(
                 cmd,
                 cwd=working_directory,
@@ -99,6 +111,7 @@ class TestRunnerTool:
                 text=True,
                 timeout=timeout_seconds,
                 shell=False,
+                env=process_env,
             )
             duration_ms = int((time.monotonic() - start) * 1000)
             stdout = completed.stdout or ""

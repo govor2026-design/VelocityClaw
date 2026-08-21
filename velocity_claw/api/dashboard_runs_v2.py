@@ -66,13 +66,14 @@ def render_dashboard_runs_v2(
                 f"<td><pre>{_e(step.get('result_preview') or '')}</pre></td>"
                 "</tr>"
             )
+        empty_steps_row = "<tr><td colspan='6'>No steps recorded.</td></tr>"
         inspector_html = (
             f"<p><code>{_e(inspector['run_id'])}</code> — {_e(inspector['task'])} "
             f"{status_badge(str(inspector.get('status') or 'unknown'))}</p>"
             f"<p class='muted'>Profile: {_e(inspector.get('profile') or 'unknown')} · "
             f"Steps: {_e(inspector['step_count'])} · Artifacts: {_e(inspector['artifact_count'])}</p>"
             "<table><thead><tr><th>ID</th><th>Title</th><th>Tool</th><th>Status</th><th>Error</th><th>Result preview</th></tr></thead><tbody>"
-            f"{''.join(step_rows) or '<tr><td colspan=\'6\'>No steps recorded.</td></tr>'}"
+            f"{''.join(step_rows) or empty_steps_row}"
             "</tbody></table>"
             f"<p><a href='/runs/{_e(inspector['run_id'])}/detail/v2'>Open full run detail</a> · "
             f"<a href='/runs/{_e(inspector['run_id'])}/artifacts/v2'>Open artifact index</a></p>"

@@ -43,8 +43,19 @@ def generate_release_notes(root: Path = ROOT) -> str:
         "build_artifact_workflow": (root / ".github" / "workflows" / "build-artifacts.yml").exists(),
         "release_workflow": (root / ".github" / "workflows" / "release.yml").exists(),
     }
+    labels = {
+        "deployment_guide": "deployment guide",
+        "release_guide": "release guide",
+        "changelog": "changelog",
+        "pyproject": "pyproject",
+        "systemd_deployment": "Systemd deployment",
+        "docker_compose_deployment": "Docker Compose deployment",
+        "production_installer": "production installer",
+        "build_artifact_workflow": "build artifact workflow (`build-artifacts`)",
+        "release_workflow": "release workflow",
+    }
     checklist = "\n".join(
-        f"- [{'x' if ok else ' '}] {name.replace('_', ' ')}" for name, ok in checks.items()
+        f"- [{'x' if ok else ' '}] {labels[name]}" for name, ok in checks.items()
     )
     changes = changelog or "No matching changelog section was found for this version."
     return f"""# Velocity Claw v{version}

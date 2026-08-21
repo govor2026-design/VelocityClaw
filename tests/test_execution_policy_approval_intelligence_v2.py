@@ -21,17 +21,17 @@ class ExecutionPolicyApprovalIntelligenceV2Tests(unittest.TestCase):
         self.assertTrue(explanation["required"])
         self.assertEqual(explanation["profile"], "safe")
         self.assertEqual(explanation["tool"], "patch.apply")
-        self.assertEqual(explanation["risk_level"], "high")
+        self.assertEqual(explanation["risk_level"], "medium")
         self.assertTrue(explanation["triggers"])
-        self.assertEqual(explanation["recommended_action"], "review_then_approve_or_reject")
-        self.assertIn("High-risk approval", explanation["operator_hint"])
+        self.assertEqual(explanation["recommended_action"], "quick_review")
+        self.assertIn("Review patch.apply", explanation["operator_hint"])
         self.assertIn("sample.py", explanation["next_step_hint"])
-        self.assertEqual(explanation["approval_label"], "high:patch.apply")
+        self.assertEqual(explanation["approval_label"], "medium:patch.apply")
 
     def test_approvals_explain_route(self):
         workspace = tempfile.mkdtemp()
         db_path = str(Path(workspace) / "memory.db")
-        settings = Settings(workspace_root=workspace, memory_db_path=db_path)
+        settings = Settings(workspace_root=workspace, memory_db_path=db_path, shell_enabled=True)
         with patch("velocity_claw.api.server.load_settings", return_value=settings):
             app = create_app()
             client = TestClient(app)

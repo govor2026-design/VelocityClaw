@@ -1,6 +1,6 @@
 # Release bootstrap and repair
 
-The first merge that installs an automatic push trigger may not start that same workflow. After the workflow exists on the default branch, a later qualifying change can exercise the normal push trigger.
+The first merge that installs an automatic push trigger may not start that same workflow. After the workflow exists on the default branch, a subsequent change can exercise the normal push trigger.
 
 Do not use a later `master` commit to recreate an older release. The release tag must point to the commit that actually contains that version.
 

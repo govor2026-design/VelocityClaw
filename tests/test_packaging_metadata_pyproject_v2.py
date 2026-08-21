@@ -18,7 +18,7 @@ def test_pyproject_version_matches_version_files():
 
 def test_pyproject_declares_console_entrypoint():
     pyproject = load_pyproject()
-    assert pyproject["project"]["scripts"]["velocity-claw"] == "cli:main"
+    assert pyproject["project"]["scripts"]["velocity-claw"] == "velocity_claw.cli:main"
 
 
 def test_pyproject_runtime_and_dev_dependencies_are_separated():

@@ -19,6 +19,6 @@ def test_hardened_app_adds_request_id_header_on_real_health_endpoint():
 
 
 def test_cli_uses_hardened_api_app_factory():
-    content = Path("cli.py").read_text(encoding="utf-8")
+    content = Path("velocity_claw/cli.py").read_text(encoding="utf-8")
     assert "from velocity_claw.api.app import create_app" in content
     assert "from velocity_claw.api.server import create_app" not in content

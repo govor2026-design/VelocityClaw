@@ -11,7 +11,7 @@ def test_validate_package_current_repo_ok():
     assert result["status"] == "ok"
     assert result["name"] == "velocity-claw"
     assert result["version"] == Path("VERSION").read_text(encoding="utf-8").strip()
-    assert result["console_script"] == "cli:main"
+    assert result["console_script"] == "velocity_claw.cli:main"
     assert result["dependency_count"] > 0
 
 
