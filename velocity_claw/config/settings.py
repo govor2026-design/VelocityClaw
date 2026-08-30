@@ -154,6 +154,10 @@ class Settings:
             raise SettingsValidationError("TELEGRAM_TOKEN still contains placeholder value")
         if self.telegram_chat_id and not str(self.telegram_chat_id).lstrip("-").isdigit():
             raise SettingsValidationError("TELEGRAM_CHAT_ID must be numeric when provided")
+        if self.env == "production" and self.telegram_token and not self.telegram_chat_id:
+            raise SettingsValidationError(
+                "TELEGRAM_CHAT_ID must be set when TELEGRAM_TOKEN is configured in production"
+            )
         if self.env == "production" and self.trusted_mode:
             raise SettingsValidationError("TRUSTED_MODE must not be enabled in production")
         if self.env == "production" and self.execution_profile == "owner" and not self.allowed_users:
