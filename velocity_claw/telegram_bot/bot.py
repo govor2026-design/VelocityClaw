@@ -38,6 +38,27 @@ class VelocityClawTelegramBot:
         self.app.add_handler(CommandHandler("stop", self.stop))
         self.app.add_handler(CommandHandler("task", self.task))
         self.app.add_handler(MessageHandler(filters.Document.ALL | filters.TEXT & ~filters.COMMAND, self.receive_message))
+        self.app.add_error_handler(self._handle_error)
+
+    async def _handle_error(self, update, context) -> None:
+        error = getattr(context, "error", None)
+        if isinstance(error, BaseException):
+            self.logger.error(
+                "Unhandled Telegram update error",
+                exc_info=(type(error), error, error.__traceback__),
+            )
+        else:
+            self.logger.error("Unhandled Telegram update error: %r", error)
+
+        if update is None or getattr(update, "message", None) is None:
+            return
+        if not await self._check_access(update):
+            return
+
+        try:
+            await self._reply(update, "Не удалось обработать запрос. Попробуйте ещё раз.")
+        except Exception:
+            self.logger.exception("Failed to send Telegram error response")
 
     def _append_signature(self, text: str) -> str:
         return f"{text.rstrip()}\n\nvelocity claw"
@@ -58,7 +79,10 @@ class VelocityClawTelegramBot:
     async def _check_access(self, update) -> bool:
         if not self.settings.telegram_chat_id:
             return True
-        return str(update.effective_chat.id) == str(self.settings.telegram_chat_id)
+        effective_chat = getattr(update, "effective_chat", None)
+        if effective_chat is None:
+            return False
+        return str(effective_chat.id) == str(self.settings.telegram_chat_id)
 
     async def start(self, update, _context) -> object | None:
         if not await self._check_access(update):
