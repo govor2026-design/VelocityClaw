@@ -127,7 +127,7 @@ class VelocityClawTelegramBot:
         if not await self._check_access(update):
             return await self._reply(update, "Access denied.")
         await self._reply(update, "Velocity Claw остановлен вручную.")
-        await self.app.stop()
+        self.app.stop_running()
 
     async def task(self, update, context) -> object | None:
         if not await self._check_access(update):
