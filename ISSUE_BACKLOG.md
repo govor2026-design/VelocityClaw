@@ -4,6 +4,33 @@ This document contains the prioritized development backlog for VelocityClaw.
 
 ---
 
+## Implementation status — 2026-10-13
+
+The original foundation backlog is **15 of 18 issues complete**. Three issues are partially complete and are not blockers for a single-owner Telegram/API deployment.
+
+| Issue | Status | Current implementation |
+| --- | --- | --- |
+| 1. Dry-run mode | Complete | Runtime setting and write/patch/test simulation are covered by safety tests. |
+| 2. Per-step retry policy | Partial | Provider, queue, run-resume, and auto-fix retries exist; a generic transient retry wrapper for every execution step is still missing. |
+| 3. Failure classification | Partial | Queue terminal reasons and provider diagnostics exist; failed steps still lack one stable `error_type` contract across planner, executor, tool, security, and provider errors. |
+| 4. Patch-based editing | Complete | Patch engine supports targeted block, function, and class operations with diffs. |
+| 5. Symbol-aware navigation | Complete | Code navigation can locate and read functions, classes, imports, and references. |
+| 6. Diff preview | Complete | Patch results expose unified diffs and run artifacts retain them. |
+| 7. Test runner | Complete | Restricted pytest, Python pytest, and npm execution returns structured results. |
+| 8. Test failure parsing | Complete | Pytest and npm failures are normalized with test, path, line, and assertion fields. |
+| 9. Auto-fix loop | Complete | Bounded patch/test attempts and forensics are persisted per run. |
+| 10. Project facts memory | Complete | Project facts, reusable notes, and task-aware project context persist in SQLite. |
+| 11. Resume failed run | Complete | Failed-run context, retry, and approval continuation preserve trace history. |
+| 12. Run artifacts | Complete | Plans, context, diffs, logs, failures, approvals, and summaries are linked to runs. |
+| 13. Web dashboard | Complete | Dashboard v2 exposes runs, steps, artifacts, diagnostics, queue, and approvals. |
+| 14. Approval workflow | Complete | Sensitive steps pause, approve/reject decisions are audited, and continuation is guarded. |
+| 15. Execution profiles | Complete | Safe, dev, and owner profiles change tool access and are exposed through API diagnostics. |
+| 16. Background workers | Partial | API jobs execute asynchronously with lifecycle controls; an optional separate worker process is not implemented. |
+| 17. Queue and concurrency | Complete | Persistent queue supports limits, cancellation, retry, recovery, pause/resume, and shutdown. |
+| 18. Deployment hardening | Complete | Non-root Docker/systemd paths, safe defaults, Telegram service, WAL, backups, and smoke gates are documented and tested. |
+
+---
+
 ## Epic 1 — Core Stability
 
 ### Issue 1. Add dry-run mode
@@ -395,11 +422,11 @@ Improve deployment safety and runtime isolation.
 
 ## Top 5 Priority Issues
 
-1. **Add patch-based code editing engine**  
-2. **Add test runner tool**  
-3. **Parse test runner output into structured failures**  
-4. **Add dry-run execution mode**  
-5. **Add minimal web dashboard for runs**
+1. **Add stable structured failure classification**
+2. **Add generic per-step transient retry policy**
+3. **Run the production smoke suite on the target host**
+4. **Observe API and Telegram together under real workload**
+5. **Evaluate pending dependency upgrades individually**
 
 ---
 
@@ -422,12 +449,12 @@ Improve deployment safety and runtime isolation.
 
 ## Suggested Next Move
 
-Start with this order:
+For the personal-agent deployment, use this order:
 
-1. patch editing  
-2. test runner  
-3. test failure parsing  
-4. dry-run mode  
-5. dashboard  
+1. publish and deploy `0.3.0`
+2. run the version and runtime-safety smoke gates on the target host
+3. confirm the backup timer creates restorable memory and queue copies
+4. operate API and Telegram for a short soak period
+5. implement structured errors and per-step retry only after observing real failure patterns
 
-That path gives the biggest practical improvement fastest.
+An external worker process is optional for a single-owner installation and should be added only when process isolation or higher throughput is actually required.

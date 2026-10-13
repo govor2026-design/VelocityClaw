@@ -2,6 +2,39 @@
 
 All notable changes to Velocity Claw are tracked here.
 
+## 0.3.0 - 2026-10-13
+
+### Added
+
+- Added persistent Telegram deployment for systemd and an opt-in Docker Compose profile sharing the API state volume.
+- Added integrity-checked SQLite online backups for memory and queue state, atomic publication, retention, secure permissions, and a hardened daily systemd timer.
+- Added production smoke gates for deployed version, authenticated operator endpoints, and the production-safe runtime posture, with machine-readable JSON output.
+- Added multi-process SQLite concurrency coverage and centralized connection lifecycle handling.
+
+### Changed
+
+- Memory and queue databases now use WAL mode, foreign-key enforcement, a 30-second busy timeout, and deterministic connection closing for concurrent API and Telegram use.
+- Provider routing now considers every configured remote fallback while preserving task-specific priorities and local-model restrictions.
+- Gemini now defaults to `gemini-2.5-flash`, supports `GEMINI_MODEL`, and sends its API key through `x-goog-api-key` instead of the request URL.
+- Provider requests now retry timeouts, server failures, and HTTP 429 responses before falling back, while permanent client errors still fail immediately.
+- Runtime timestamps and retention comparisons now use timezone-aware UTC values.
+- API and Telegram shutdown paths now close the shared agent and its HTTP resources.
+
+### Fixed
+
+- Fixed malformed provider responses being recorded as both a success and a failure or duplicated in route history.
+- Fixed provider timeouts bypassing configured retries and fallback routing.
+- Fixed task execution exceptions exposing provider messages, tokens, paths, or internal details to API clients.
+- Fixed Telegram startup with ambiguous or empty production allowlists, cancellation of running updates, and unhandled polling-boundary exceptions.
+- Fixed Docker API deployment reading the example environment file instead of the operator configuration.
+- Removed deprecated Starlette lifecycle behavior and warning noise from the strict test suite.
+
+### Security
+
+- Telegram production access now fails closed unless allowed chat IDs are explicitly configured.
+- API error responses retain full operator tracebacks in logs while returning a stable redacted client message.
+- Database backups are created with owner-only file permissions and documented off-host replication guidance.
+
 ## 0.2.4 - 2026-06-22
 
 ### Added
