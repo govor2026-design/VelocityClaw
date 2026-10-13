@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from velocity_claw.api.app import create_app
+from velocity_claw.backup import DEFAULT_BACKUP_KEEP, backup_runtime_databases
 from velocity_claw.config.settings import load_settings
 from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.core.release import ReleaseReadinessEvaluator
@@ -92,6 +93,21 @@ def memory_cleanup_cli(days: int | None = None, keep_min_runs: int | None = None
     _print_payload(result, as_json=as_json)
 
 
+def backup_databases_cli(
+    backup_dir: str | None = None,
+    keep: int = DEFAULT_BACKUP_KEEP,
+    as_json: bool = False,
+) -> None:
+    settings = load_settings()
+    resolved_dir = backup_dir or str(Path(settings.memory_db_path).parent / "backups")
+    result = backup_runtime_databases(
+        settings.memory_db_path,
+        resolved_dir,
+        keep=keep,
+    )
+    _print_payload(result, as_json=as_json)
+
+
 def list_runs_cli(limit: int, as_json: bool = False):
     agent = build_agent()
     _print_payload({"runs": agent.memory.list_recent_runs(limit=limit)}, as_json=as_json)
@@ -134,6 +150,9 @@ def main():
     parser.add_argument("--memory-retention-days", type=int, default=None, help="Override memory retention window in days")
     parser.add_argument("--memory-keep-min-runs", type=int, default=None, help="Minimum newest runs to keep during cleanup")
     parser.add_argument("--memory-no-vacuum", action="store_true", help="Skip SQLite VACUUM after cleanup")
+    parser.add_argument("--backup", action="store_true", help="Back up the live memory and queue SQLite databases")
+    parser.add_argument("--backup-dir", type=str, default=None, help="Destination directory for --backup")
+    parser.add_argument("--backup-keep", type=int, default=DEFAULT_BACKUP_KEEP, help="Number of backups to retain per database")
     parser.add_argument("--runs", action="store_true", help="List recent runs")
     parser.add_argument("--runs-limit", type=int, default=10, help="Limit for --runs output")
     parser.add_argument("--last-failed", action="store_true", help="Show last failed run")
@@ -158,6 +177,8 @@ def main():
         release_checklist_cli(as_json=args.json)
     elif args.memory_cleanup:
         memory_cleanup_cli(days=args.memory_retention_days, keep_min_runs=args.memory_keep_min_runs, vacuum=not args.memory_no_vacuum, as_json=args.json)
+    elif args.backup:
+        backup_databases_cli(backup_dir=args.backup_dir, keep=args.backup_keep, as_json=args.json)
     elif args.runs:
         list_runs_cli(limit=args.runs_limit, as_json=args.json)
     elif args.last_failed:

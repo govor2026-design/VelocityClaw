@@ -45,5 +45,23 @@ def test_systemd_tmpfiles_declares_runtime_directories():
     content = Path("deploy/systemd/velocity-claw.tmpfiles.conf").read_text(encoding="utf-8")
     assert "/var/lib/velocity-claw" in content
     assert "/var/lib/velocity-claw/workspace" in content
+    assert "/var/lib/velocity-claw/backups" in content
     assert "/var/log/velocity-claw" in content
     assert "/etc/velocity-claw" in content
+
+
+def test_systemd_backup_timer_runs_hardened_online_backup():
+    service = Path("deploy/systemd/velocity-claw-backup.service").read_text(encoding="utf-8")
+    timer = Path("deploy/systemd/velocity-claw-backup.timer").read_text(encoding="utf-8")
+
+    assert "Type=oneshot" in service
+    assert "User=velocityclaw" in service
+    assert "--backup" in service
+    assert "--backup-keep 14" in service
+    assert "UMask=0077" in service
+    assert "NoNewPrivileges=true" in service
+    assert "ProtectSystem=full" in service
+    assert "OnCalendar=daily" in timer
+    assert "RandomizedDelaySec=30m" in timer
+    assert "Persistent=true" in timer
+    assert "Unit=velocity-claw-backup.service" in timer

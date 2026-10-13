@@ -194,6 +194,27 @@ After merging non-trivial changes:
 
 ---
 
+## SQLite Backups
+
+Create an online backup without stopping API or Telegram:
+
+```bash
+python cli.py --backup --backup-dir /var/lib/velocity-claw/backups --backup-keep 14 --json
+```
+
+The command backs up both the configured memory database and its `.queue` database, runs SQLite `integrity_check`, atomically publishes each backup, and removes copies beyond the retention limit. A missing queue database is reported as skipped rather than treated as an error.
+
+On systemd deployments, `velocity-claw-backup.timer` runs this daily. Check it with:
+
+```bash
+systemctl list-timers velocity-claw-backup.timer
+journalctl -u velocity-claw-backup.service --since today
+```
+
+For restore, stop both `velocity-claw` and `velocity-claw-telegram`, preserve the current database plus `-wal`/`-shm` files, verify the selected backups with `PRAGMA integrity_check`, restore both configured paths, correct ownership, and then start the services.
+
+---
+
 ## Near-Term Runbook Expansion
 
 This file should later include:

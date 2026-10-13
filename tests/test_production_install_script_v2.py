@@ -24,6 +24,8 @@ def test_install_script_installs_systemd_assets_and_config_permissions():
     content = INSTALLER.read_text(encoding="utf-8")
     assert "deploy/systemd/velocity-claw.service" in content
     assert "deploy/systemd/velocity-claw-telegram.service" in content
+    assert "deploy/systemd/velocity-claw-backup.service" in content
+    assert "deploy/systemd/velocity-claw-backup.timer" in content
     assert 'TELEGRAM_SERVICE_NAME="${TELEGRAM_SERVICE_NAME:-velocity-claw-telegram}"' in content
     assert "deploy/systemd/velocity-claw.tmpfiles.conf" in content
     assert "systemctl daemon-reload" in content
@@ -36,6 +38,7 @@ def test_installer_keeps_telegram_service_opt_in():
     content = INSTALLER.read_text(encoding="utf-8")
 
     assert 'systemctl enable "$SERVICE_NAME"' in content
+    assert 'systemctl enable "$BACKUP_TIMER_NAME"' in content
     assert 'systemctl enable "$TELEGRAM_SERVICE_NAME"' not in content
     assert "systemctl enable --now $TELEGRAM_SERVICE_NAME" in content
 

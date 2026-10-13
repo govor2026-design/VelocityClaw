@@ -24,6 +24,7 @@ The installer prepares:
 - Python virtual environment
 - API systemd unit
 - optional Telegram systemd unit
+- daily SQLite online-backup timer
 - tmpfiles runtime directories
 
 After installation, review `/etc/velocity-claw/velocity-claw.env` before starting the service.
@@ -57,6 +58,8 @@ Relevant files:
 
 - `deploy/systemd/velocity-claw.service`
 - `deploy/systemd/velocity-claw-telegram.service`
+- `deploy/systemd/velocity-claw-backup.service`
+- `deploy/systemd/velocity-claw-backup.timer`
 - `deploy/systemd/velocity-claw.env.example`
 - `deploy/systemd/velocity-claw.tmpfiles.conf`
 - `deploy/systemd/README.md`
@@ -123,6 +126,8 @@ For a healthy deployment, verify:
 - `docs/API.md` matches the deployed API surface
 - logs are being written or available through the process manager
 - the memory database path is writable by the service user
+- the backup timer is active and its latest run completed successfully
+- recent backups pass SQLite `integrity_check` and are replicated off-host when disaster recovery is required
 - the workspace directory exists and is writable by the service user
 - the configured execution profile is intentional
 
@@ -136,6 +141,7 @@ The CLI includes local admin commands for common operations:
 - last failed run
 - retry context
 - retry run
+- online backup of memory and queue databases
 - JSON output mode
 
 See `cli.py` for exact flags.

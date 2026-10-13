@@ -36,6 +36,16 @@ The Telegram container uses an opt-in Compose profile so an empty token cannot c
 
 Use standard Docker Compose status, logs, restart, and stop commands for operations.
 
+## Online SQLite backup
+
+Back up the live memory and queue databases into the persistent data volume with:
+
+```bash
+docker compose --env-file velocity-claw.env exec api python cli.py --backup --backup-dir /var/lib/velocity-claw/backups --backup-keep 14 --json
+```
+
+Copy the resulting files to separate storage if the backup must survive loss of the Docker host or volume.
+
 ## Security notes
 
 The compose template defaults to the safe execution profile, disables shell execution, disables git execution, drops Linux capabilities, enables `no-new-privileges`, isolates `/tmp` with tmpfs, and persists only agent data/log volumes.
