@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from velocity_claw.timestamps import utc_now_iso
+from velocity_claw.failures import FailureType
 
 
 def _now() -> str:
@@ -113,6 +114,7 @@ def _pause_for_next_approval(
         "status": "pending_approval",
         "result": approval,
         "error": None,
+        "error_type": None,
         "started_at": started_at,
         "completed_at": completed_at,
     }
@@ -171,6 +173,9 @@ def _store_execution_result(agent: Any, run_id: str, source_step_id: int, result
             result=result.get("result"),
             error=result.get("error"),
         )
+        update_error_type = getattr(agent.memory, "update_step_error_type", None)
+        if callable(update_error_type):
+            update_error_type(run_id, source_step_id, result.get("error_type"))
     else:
         agent.memory.save_step(run_id, result)
     if hasattr(agent, "_persist_artifacts"):
@@ -292,6 +297,7 @@ async def continue_after_approval(agent: Any, run_id: str, step_id: int) -> dict
                 "status": "failed",
                 "result": None,
                 "error": validation_error,
+                "error_type": FailureType.POLICY_DENIED.value,
                 "started_at": started_at,
                 "completed_at": _now(),
             }
@@ -308,6 +314,7 @@ async def continue_after_approval(agent: Any, run_id: str, step_id: int) -> dict
             )
 
         result = await agent.executor.execute_step(step, {})
+        result.setdefault("error_type", None)
         result.setdefault("id", step.get("id"))
         result.setdefault("title", step.get("title"))
         result.setdefault("tool", step.get("tool"))

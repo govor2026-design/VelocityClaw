@@ -13,7 +13,7 @@ def sample_runs():
             "context": {"execution_profile": "safe"},
             "steps": [
                 {"id": 1, "title": "Inspect", "tool": "git.inspect", "status": "completed", "result": {"branch": "master"}},
-                {"id": 2, "title": "Test", "tool": "test.run", "status": "failed", "error": "assertion failed", "result": "x" * 300},
+                {"id": 2, "title": "Test", "tool": "test.run", "status": "failed", "error": "assertion failed", "error_type": "test_failed", "result": "x" * 300},
             ],
             "artifacts": [{"name": "test_output"}],
         },
@@ -54,6 +54,7 @@ def test_compact_step_inspector_limits_result_preview():
     assert inspector["step_count"] == 2
     assert inspector["artifact_count"] == 1
     assert inspector["steps"][1]["error"] == "assertion failed"
+    assert inspector["steps"][1]["error_type"] == "test_failed"
     assert len(inspector["steps"][1]["result_preview"]) == 240
     assert inspector["steps"][1]["result_preview"].endswith("…")
 

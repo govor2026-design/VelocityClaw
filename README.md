@@ -233,6 +233,7 @@ Main guide:
 API guide:
 
 - `docs/API.md`
+- `docs/FAILURE_TYPES.md`
 
 Release guide:
 
@@ -287,6 +288,7 @@ deploy/
 docs/
   API.md          API endpoint guide
   DEPLOYMENT.md   unified deployment guide
+  FAILURE_TYPES.md stable machine-readable failure contract
   RELEASE.md      release checklist and versioning guide
 ```
 
@@ -302,7 +304,6 @@ Known next maturity areas:
 - deeper approval resume UX
 - stronger persistent worker infrastructure
 - multi-project and multi-user model
-- packaging automation and tagged releases
 - richer artifact explorer
 - production observability stack
 

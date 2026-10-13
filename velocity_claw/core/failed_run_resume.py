@@ -217,6 +217,7 @@ class FailedRunResumer:
             "status": "pending_approval",
             "result": approval,
             "error": None,
+            "error_type": None,
             "started_at": utc_now_iso(),
             "completed_at": utc_now_iso(),
             "attempt_no": attempt_no,

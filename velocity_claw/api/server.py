@@ -32,6 +32,7 @@ class StepResponse(BaseModel):
     status: str
     result: Optional[Any] = None
     error: Optional[str] = None
+    error_type: Optional[str] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
 

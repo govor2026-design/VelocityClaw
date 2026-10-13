@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from velocity_claw.timestamps import utc_now_iso
+from velocity_claw.failures import FailureType, classify_failure
 
 
 class StepExecutionGuard:
@@ -45,7 +46,14 @@ class StepExecutionGuard:
         elif tool == "git.run":
             self.security.validate_git_command(args.get("command", ""), access_profile)
 
-    def _failed_result(self, step: dict, started_at: str, error: str, policy: dict) -> dict:
+    def _failed_result(
+        self,
+        step: dict,
+        started_at: str,
+        error: str,
+        policy: dict,
+        error_type: str,
+    ) -> dict:
         return {
             "id": step.get("id"),
             "title": step.get("title", "unknown"),
@@ -54,6 +62,7 @@ class StepExecutionGuard:
             "status": "failed",
             "result": {"policy": policy},
             "error": error,
+            "error_type": error_type,
             "started_at": started_at,
             "completed_at": utc_now_iso(),
         }
@@ -74,7 +83,13 @@ class StepExecutionGuard:
             return {
                 "state": "blocked",
                 "policy": policy,
-                "step_result": self._failed_result(step, started_at, policy["reason"], policy),
+                "step_result": self._failed_result(
+                    step,
+                    started_at,
+                    policy["reason"],
+                    policy,
+                    FailureType.POLICY_DENIED.value,
+                ),
             }
         if policy["requires_approval"]:
             return {
@@ -95,10 +110,17 @@ class StepExecutionGuard:
             return {
                 "state": "security_failed",
                 "policy": policy,
-                "step_result": self._failed_result(step, started_at, str(exc), policy),
+                "step_result": self._failed_result(
+                    step,
+                    started_at,
+                    str(exc),
+                    policy,
+                    classify_failure(exc, phase="security", tool=step.get("tool")),
+                ),
             }
 
         result = await self.executor.execute_step(step, context)
+        result.setdefault("error_type", None)
         result["started_at"] = result.get("started_at") or started_at
         result["completed_at"] = utc_now_iso()
         result["policy"] = {

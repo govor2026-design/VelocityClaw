@@ -85,9 +85,9 @@ def install_step_attempts_v2(memory_cls: type) -> None:
                 """
                 INSERT INTO steps (
                     run_id, step_id, title, tool, args, status, result, error,
-                    started_at, completed_at, attempt_no, phase
+                    error_type, started_at, completed_at, attempt_no, phase
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -98,6 +98,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
                     step.get("status"),
                     json.dumps(step.get("result"), ensure_ascii=False),
                     step.get("error"),
+                    step.get("error_type"),
                     step.get("started_at"),
                     step.get("completed_at"),
                     resolved_attempt,
@@ -112,7 +113,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
             rows = conn.execute(
                 """
                 SELECT id, step_id, title, tool, args, status, result, error,
-                       started_at, completed_at, attempt_no, phase
+                       error_type, started_at, completed_at, attempt_no, phase
                 FROM steps
                 WHERE run_id = ?
                 ORDER BY id
@@ -129,22 +130,31 @@ def install_step_attempts_v2(memory_cls: type) -> None:
                 "status": row[5],
                 "result": json.loads(row[6]) if row[6] is not None else None,
                 "error": row[7],
-                "started_at": row[8],
-                "completed_at": row[9],
-                "attempt_no": row[10] or 1,
-                "phase": row[11] or "initial",
+                "error_type": row[8],
+                "started_at": row[9],
+                "completed_at": row[10],
+                "attempt_no": row[11] or 1,
+                "phase": row[12] or "initial",
             }
             for row in rows
         ]
 
-    def update_step_status(self, run_id: str, step_id: int, status: str, result: Any = None, error: str | None = None) -> None:
+    def update_step_status(
+        self,
+        run_id: str,
+        step_id: int,
+        status: str,
+        result: Any = None,
+        error: str | None = None,
+        error_type: str | None = None,
+    ) -> None:
         if not getattr(self, "enabled", False):
             return
         with open_database(self.db_path) as conn:
             conn.execute(
                 """
                 UPDATE steps
-                SET status = ?, result = ?, error = ?, completed_at = ?
+                SET status = ?, result = ?, error = ?, error_type = ?, completed_at = ?
                 WHERE id = (
                     SELECT id FROM steps
                     WHERE run_id = ? AND step_id = ?
@@ -155,6 +165,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
                     status,
                     json.dumps(result, ensure_ascii=False) if result is not None else None,
                     error,
+                    error_type,
                     utc_now_iso(),
                     run_id,
                     step_id,
@@ -170,6 +181,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
             {
                 "id": step.get("id"),
                 "status": step.get("status"),
+                "error_type": step.get("error_type"),
                 "attempt_no": step.get("attempt_no", 1),
                 "phase": step.get("phase", "initial"),
             }

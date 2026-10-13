@@ -2,6 +2,17 @@
 
 All notable changes to Velocity Claw are tracked here.
 
+## Unreleased
+
+### Added
+
+- Added a documented, stable `error_type` taxonomy for planning, provider, policy, security, test, and tool failures.
+- Added automatic SQLite migration and API, dashboard, route-history, report, and forensic exposure for structured failure types.
+
+### Changed
+
+- Planning failures now persist a structured synthetic step and failure artifact before the original exception crosses the API boundary.
+
 ## 0.3.0 - 2026-10-13
 
 ### Added

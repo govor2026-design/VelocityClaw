@@ -6,13 +6,13 @@ This document contains the prioritized development backlog for VelocityClaw.
 
 ## Implementation status — 2026-10-13
 
-The original foundation backlog is **15 of 18 issues complete**. Three issues are partially complete and are not blockers for a single-owner Telegram/API deployment.
+The original foundation backlog is **16 of 18 issues complete**. Two issues are partially complete and are not blockers for a single-owner Telegram/API deployment.
 
 | Issue | Status | Current implementation |
 | --- | --- | --- |
 | 1. Dry-run mode | Complete | Runtime setting and write/patch/test simulation are covered by safety tests. |
 | 2. Per-step retry policy | Partial | Provider, queue, run-resume, and auto-fix retries exist; a generic transient retry wrapper for every execution step is still missing. |
-| 3. Failure classification | Partial | Queue terminal reasons and provider diagnostics exist; failed steps still lack one stable `error_type` contract across planner, executor, tool, security, and provider errors. |
+| 3. Failure classification | Complete | A stable `error_type` contract is persisted and exposed across planner, executor, tool, security, provider, API, dashboard, and forensic boundaries. |
 | 4. Patch-based editing | Complete | Patch engine supports targeted block, function, and class operations with diffs. |
 | 5. Symbol-aware navigation | Complete | Code navigation can locate and read functions, classes, imports, and references. |
 | 6. Diff preview | Complete | Patch results expose unified diffs and run artifacts retain them. |
@@ -422,11 +422,11 @@ Improve deployment safety and runtime isolation.
 
 ## Top 5 Priority Issues
 
-1. **Add stable structured failure classification**
-2. **Add generic per-step transient retry policy**
-3. **Run the production smoke suite on the target host**
-4. **Observe API and Telegram together under real workload**
-5. **Evaluate pending dependency upgrades individually**
+1. **Add generic per-step transient retry policy**
+2. **Run the production smoke suite on the target host**
+3. **Observe API and Telegram together under real workload**
+4. **Evaluate pending dependency upgrades individually**
+5. **Consider a separate worker process only if deployment load requires it**
 
 ---
 
@@ -451,10 +451,10 @@ Improve deployment safety and runtime isolation.
 
 For the personal-agent deployment, use this order:
 
-1. publish and deploy `0.3.0`
+1. deploy `0.3.0`
 2. run the version and runtime-safety smoke gates on the target host
 3. confirm the backup timer creates restorable memory and queue copies
 4. operate API and Telegram for a short soak period
-5. implement structured errors and per-step retry only after observing real failure patterns
+5. tune the generic per-step retry policy from observed transient failures
 
 An external worker process is optional for a single-owner installation and should be added only when process isolation or higher throughput is actually required.

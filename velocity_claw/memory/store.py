@@ -41,6 +41,7 @@ class MemoryStore:
                     status TEXT NOT NULL,
                     result TEXT,
                     error TEXT,
+                    error_type TEXT,
                     started_at DATETIME,
                     completed_at DATETIME,
                     FOREIGN KEY (run_id) REFERENCES runs (run_id)
@@ -108,6 +109,9 @@ class MemoryStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_run_id ON artifacts(run_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fix_attempts_run_id ON fix_attempts(run_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_approval_history_run_id ON approval_history(run_id)")
+            step_columns = {row[1] for row in conn.execute("PRAGMA table_info(steps)").fetchall()}
+            if "error_type" not in step_columns:
+                conn.execute("ALTER TABLE steps ADD COLUMN error_type TEXT")
 
     def create_run(self, task: str) -> str:
         if not self.enabled:
@@ -125,8 +129,11 @@ class MemoryStore:
             return
         with open_database(self.db_path) as conn:
             conn.execute("""
-                INSERT INTO steps (run_id, step_id, title, tool, args, status, result, error, started_at, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO steps (
+                    run_id, step_id, title, tool, args, status, result, error,
+                    error_type, started_at, completed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 run_id,
                 step.get("id"),
@@ -136,6 +143,7 @@ class MemoryStore:
                 step.get("status"),
                 json.dumps(step.get("result"), ensure_ascii=False),
                 step.get("error"),
+                step.get("error_type"),
                 step.get("started_at"),
                 step.get("completed_at"),
             ))
@@ -176,7 +184,7 @@ class MemoryStore:
             return []
         with open_database(self.db_path) as conn:
             steps = conn.execute(
-                "SELECT step_id, title, tool, args, status, result, error, started_at, completed_at FROM steps WHERE run_id = ? ORDER BY step_id, id",
+                "SELECT step_id, title, tool, args, status, result, error, error_type, started_at, completed_at FROM steps WHERE run_id = ? ORDER BY step_id, id",
                 (run_id,)
             ).fetchall()
         return [
@@ -188,8 +196,9 @@ class MemoryStore:
                 "status": s[4],
                 "result": json.loads(s[5]) if s[5] is not None else None,
                 "error": s[6],
-                "started_at": s[7],
-                "completed_at": s[8],
+                "error_type": s[7],
+                "started_at": s[8],
+                "completed_at": s[9],
             }
             for s in steps
         ]
@@ -396,6 +405,7 @@ class MemoryStore:
                 "title": failed_step.get("title"),
                 "tool": failed_step.get("tool"),
                 "error": failed_step.get("error"),
+                "error_type": failed_step.get("error_type"),
             } if failed_step else None,
             "pending_approval_step": {
                 "id": pending_step.get("id"),
@@ -430,6 +440,7 @@ class MemoryStore:
                 "title": step.get("title"),
                 "tool": step.get("tool"),
                 "status": step.get("status"),
+                "error_type": step.get("error_type"),
             }
             for step in steps[:10]
         ]
@@ -579,11 +590,49 @@ class MemoryStore:
             })
         return approvals
 
-    def update_step_status(self, run_id: str, step_id: int, status: str, result: Any = None, error: str | None = None) -> None:
+    def update_step_status(
+        self,
+        run_id: str,
+        step_id: int,
+        status: str,
+        result: Any = None,
+        error: str | None = None,
+        error_type: str | None = None,
+    ) -> None:
         if not self.enabled:
             return
         with open_database(self.db_path) as conn:
             conn.execute(
-                "UPDATE steps SET status = ?, result = ?, error = ?, completed_at = ? WHERE run_id = ? AND step_id = ?",
-                (status, json.dumps(result, ensure_ascii=False) if result is not None else None, error, utc_now_iso(), run_id, step_id),
+                "UPDATE steps SET status = ?, result = ?, error = ?, error_type = ?, completed_at = ? WHERE run_id = ? AND step_id = ?",
+                (
+                    status,
+                    json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    error,
+                    error_type,
+                    utc_now_iso(),
+                    run_id,
+                    step_id,
+                ),
+            )
+
+    def update_step_error_type(
+        self,
+        run_id: str,
+        step_id: int,
+        error_type: str | None,
+    ) -> None:
+        if not self.enabled:
+            return
+        with open_database(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE steps
+                SET error_type = ?
+                WHERE id = (
+                    SELECT id FROM steps
+                    WHERE run_id = ? AND step_id = ?
+                    ORDER BY id DESC LIMIT 1
+                )
+                """,
+                (error_type, run_id, step_id),
             )
