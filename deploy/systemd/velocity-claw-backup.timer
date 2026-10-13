@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Velocity Claw SQLite backup
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+Unit=velocity-claw-backup.service
+
+[Install]
+WantedBy=timers.target

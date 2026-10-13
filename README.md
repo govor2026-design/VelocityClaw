@@ -246,6 +246,7 @@ Production defaults are conservative:
 - shell execution disabled
 - git execution disabled
 - state under `/var/lib/velocity-claw`
+- SQLite online backup command and daily systemd backup timer
 
 ---
 

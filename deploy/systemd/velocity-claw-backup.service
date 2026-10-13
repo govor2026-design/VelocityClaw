@@ -1,0 +1,25 @@
+[Unit]
+Description=Velocity Claw SQLite online backup
+Documentation=https://github.com/govor2026-design/VelocityClaw
+
+[Service]
+Type=oneshot
+User=velocityclaw
+Group=velocityclaw
+WorkingDirectory=/opt/velocityclaw
+EnvironmentFile=/etc/velocity-claw/velocity-claw.env
+ExecStart=/opt/velocityclaw/.venv/bin/python cli.py --backup --backup-dir /var/lib/velocity-claw/backups --backup-keep 14 --json
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/velocity-claw/backups
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
