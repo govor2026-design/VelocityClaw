@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections import Counter
 from typing import Any
 
+from velocity_claw.sqlite import open_database
 from velocity_claw.timestamps import utc_now_iso
 
 
@@ -60,7 +60,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
         original_ensure_tables(self)
         if not getattr(self, "enabled", False):
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(steps)").fetchall()}
             if "attempt_no" not in columns:
                 conn.execute("ALTER TABLE steps ADD COLUMN attempt_no INTEGER NOT NULL DEFAULT 1")
@@ -80,7 +80,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
         except (TypeError, ValueError):
             resolved_attempt = 1
         resolved_phase = str(phase or step.get("phase") or "initial").strip() or "initial"
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO steps (
@@ -108,7 +108,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
     def load_steps(self, run_id: str):
         if not getattr(self, "enabled", False):
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 """
                 SELECT id, step_id, title, tool, args, status, result, error,
@@ -140,7 +140,7 @@ def install_step_attempts_v2(memory_cls: type) -> None:
     def update_step_status(self, run_id: str, step_id: int, status: str, result: Any = None, error: str | None = None) -> None:
         if not getattr(self, "enabled", False):
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 """
                 UPDATE steps

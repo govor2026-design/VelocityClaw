@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import math
 import re
-import sqlite3
 from collections import Counter
 from typing import Any, Iterable
 
+from velocity_claw.sqlite import open_database
 from velocity_claw.timestamps import utc_now_iso
 
 
@@ -109,7 +109,7 @@ class ProjectContextV2:
     def _ensure_table(self) -> None:
         if not self.enabled or not self.db_path:
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS project_knowledge (
@@ -157,7 +157,7 @@ class ProjectContextV2:
             raise ValueError("knowledge_confidence_out_of_range")
         payload = _safe_json(value)
         timestamp = _now()
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO project_knowledge (
@@ -185,14 +185,14 @@ class ProjectContextV2:
     def forget(self, key: str) -> bool:
         if not self.enabled:
             return False
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             cursor = conn.execute("DELETE FROM project_knowledge WHERE key = ?", (key,))
         return bool(cursor.rowcount)
 
     def get(self, key: str) -> dict[str, Any] | None:
         if not self.enabled:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute(
                 """
                 SELECT key, category, value, source, confidence,
@@ -207,7 +207,7 @@ class ProjectContextV2:
         if not self.enabled:
             return []
         bounded_limit = max(1, min(int(limit), 200))
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             if category:
                 rows = conn.execute(
                     """
@@ -237,7 +237,7 @@ class ProjectContextV2:
         """Load every candidate before task-relevance scoring."""
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 """
                 SELECT key, category, value, source, confidence,
@@ -298,7 +298,7 @@ class ProjectContextV2:
         if not keys or not self.enabled:
             return
         placeholders = ",".join("?" for _ in keys)
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 f"""
                 UPDATE project_knowledge
