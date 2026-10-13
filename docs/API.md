@@ -24,10 +24,10 @@ API_KEY=change-this-long-random-key
 After starting a deployed API service, run:
 
 ```bash
-VELOCITY_CLAW_API_KEY=<key> python scripts/smoke_api.py --base-url http://127.0.0.1:8000
+VELOCITY_CLAW_API_KEY=<key> python scripts/smoke_api.py --base-url http://127.0.0.1:8000 --expected-version "$(cat VERSION)"
 ```
 
-The smoke script checks public health, protected-route auth behavior, authenticated version/status/metrics/diagnostics, Queue v2 runtime, runs, approvals, profiles, release readiness, and Dashboard v2.
+The smoke script checks public health, protected-route auth behavior, authenticated version/status/metrics/diagnostics, Queue v2 runtime, runs, approvals, profiles, release readiness, and Dashboard v2. By default it also requires the expected deployed version and the production-safe runtime posture (`production`, `safe`, safe mode on, trusted mode off). Use `--json` for automation. `--allow-unsafe-runtime` is available only for intentional non-production smoke tests.
 
 ## Health and runtime status
 

@@ -123,6 +123,7 @@ For a healthy deployment, verify:
 - `/runs` returns recent runs with authentication
 - `/approvals` returns pending approvals with authentication
 - `scripts/smoke_api.py` passes against the deployed service
+- its `version_match` and `runtime_safety` production gates pass
 - `docs/API.md` matches the deployed API surface
 - logs are being written or available through the process manager
 - the memory database path is writable by the service user
