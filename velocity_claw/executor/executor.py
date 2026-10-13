@@ -12,7 +12,12 @@ from velocity_claw.tools.code_nav import CodeNavigationTool
 from velocity_claw.tools.test_runner import TestRunnerTool
 from velocity_claw.security.policy import SecurityManager, AccessProfile
 from velocity_claw.config.settings import Settings
-from velocity_claw.failures import FailureType, UnknownToolError, classify_failure
+from velocity_claw.failures import (
+    FailureType,
+    UnknownToolError,
+    classify_failure,
+    is_transient_failure,
+)
 
 
 class Executor:
@@ -73,6 +78,7 @@ class Executor:
                         "result": result,
                         "error": f"test_run_{runner_status or 'failed'}",
                         "error_type": FailureType.TEST_FAILED.value,
+                        "retryable": False,
                     }
             simulated = isinstance(result, dict) and result.get("status") == "simulated"
             if simulated:
@@ -83,6 +89,7 @@ class Executor:
                 "result": result,
                 "error": None,
                 "error_type": None,
+                "retryable": False,
                 "simulated": simulated,
             }
         except Exception as exc:
@@ -93,6 +100,7 @@ class Executor:
                 "result": None,
                 "error": str(exc),
                 "error_type": classify_failure(exc, phase="tool", tool=tool),
+                "retryable": is_transient_failure(exc),
                 "simulated": False,
             }
 

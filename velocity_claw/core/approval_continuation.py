@@ -313,15 +313,53 @@ async def continue_after_approval(agent: Any, run_id: str, step_id: int) -> dict
                 executed=executed,
             )
 
-        result = await agent.executor.execute_step(step, {})
-        result.setdefault("error_type", None)
-        result.setdefault("id", step.get("id"))
-        result.setdefault("title", step.get("title"))
-        result.setdefault("tool", step.get("tool"))
-        result.setdefault("args", step.get("args", {}))
-        result["started_at"] = result.get("started_at") or started_at
-        result["completed_at"] = _now()
-        _store_execution_result(agent, run_id, step_id, result, source_step=index == start_index)
+        guard = getattr(agent, "step_guard", None)
+        matching_attempts = [
+            item for item in run.get("steps", []) if item.get("id") == step.get("id")
+        ]
+        if index == start_index and matching_attempts:
+            first_attempt_no = max(
+                1,
+                int(matching_attempts[-1].get("attempt_no") or 1),
+            )
+        else:
+            first_attempt_no = 1 + max(
+                (int(item.get("attempt_no") or 1) for item in matching_attempts),
+                default=0,
+            )
+        if guard is not None:
+            outcome = await guard.execute(
+                step,
+                {},
+                profile_name,
+                approved=index == start_index,
+                started_at=started_at,
+                attempt_no=first_attempt_no,
+                phase="approval_continuation",
+            )
+            attempts = list(outcome.get("attempts") or [outcome["step_result"]])
+        else:
+            attempts = [await agent.executor.execute_step(step, {})]
+
+        for offset, attempt in enumerate(attempts):
+            attempt.setdefault("error_type", None)
+            attempt.setdefault("id", step.get("id"))
+            attempt.setdefault("title", step.get("title"))
+            attempt.setdefault("tool", step.get("tool"))
+            attempt.setdefault("args", step.get("args", {}))
+            attempt.setdefault("attempt_no", first_attempt_no + offset)
+            attempt.setdefault("phase", "approval_continuation")
+            attempt.setdefault("retry_count", offset)
+            attempt["started_at"] = attempt.get("started_at") or started_at
+            attempt["completed_at"] = attempt.get("completed_at") or _now()
+            _store_execution_result(
+                agent,
+                run_id,
+                step_id,
+                attempt,
+                source_step=index == start_index and offset == 0,
+            )
+        result = attempts[-1]
         executed.append(result)
 
         if result.get("status") == "failed":

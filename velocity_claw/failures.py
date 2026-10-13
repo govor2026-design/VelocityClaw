@@ -27,6 +27,10 @@ class UnknownToolError(ValueError):
     pass
 
 
+class TransientToolError(RuntimeError):
+    """Raised when a tool operation is safe to consider for retry."""
+
+
 class FailureType(str, Enum):
     """Stable machine-readable failure categories used across run boundaries."""
 
@@ -75,3 +79,9 @@ def classify_failure(
     if tool:
         return FailureType.TOOL_EXECUTION_FAILED.value
     return FailureType.INTERNAL_ERROR.value
+
+
+def is_transient_failure(exc: BaseException) -> bool:
+    """Return whether an exception represents a temporary execution failure."""
+
+    return isinstance(exc, (TimeoutError, ProviderRequestError, TransientToolError))

@@ -14,6 +14,8 @@ class FakeSettings:
     shell_enabled = False
     git_enabled = False
     dry_run = False
+    step_max_retries = 1
+    step_retry_backoff_ms = 250
 
 
 class RiskySettings(FakeSettings):
@@ -132,6 +134,8 @@ def test_build_diagnostics_v2_summarizes_runtime_state_flags_version_and_queue_r
     assert result["summary"]["provider_failures"] == 2
     assert result["summary"]["provider_cooldowns"] == 1
     assert result["runtime"]["execution_profile"] == "safe"
+    assert result["runtime"]["step_max_retries"] == 1
+    assert result["runtime"]["step_retry_backoff_ms"] == 250
     assert result["queue"]["persistence_enabled"] is True
     assert result["queue"]["max_attempts"] == 3
     assert result["links"]["version"] == "/version"
