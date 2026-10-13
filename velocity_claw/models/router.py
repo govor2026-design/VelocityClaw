@@ -5,18 +5,13 @@ import time
 import aiohttp
 from velocity_claw.config.settings import Settings
 from velocity_claw.logs.logger import get_logger
-
-
-class ProviderNotConfiguredError(Exception):
-    pass
-
-
-class ProviderRequestError(Exception):
-    pass
-
-
-class ProviderResponseError(Exception):
-    pass
+from velocity_claw.failures import (
+    FailureType,
+    ProviderNotConfiguredError,
+    ProviderRequestError,
+    ProviderResponseError,
+    classify_failure,
+)
 
 
 class ModelRouter:
@@ -70,11 +65,20 @@ class ModelRouter:
             except (ProviderNotConfiguredError, ProviderRequestError, ProviderResponseError) as e:
                 self.logger.warning("Provider %s failed: %s", provider, e)
                 self._record_provider_failure(provider, str(e), task_type)
-                route_attempt["attempts"].append({"provider": provider, "status": "failed", "error": str(e)})
+                error_type = classify_failure(e, phase="provider")
+                route_attempt["attempts"].append(
+                    {
+                        "provider": provider,
+                        "status": "failed",
+                        "error": str(e),
+                        "error_type": error_type,
+                    }
+                )
                 errors.append(f"{provider}: {e}")
                 continue
         route_attempt["completed_at"] = time.time()
         route_attempt["errors"] = errors
+        route_attempt["error_type"] = FailureType.PROVIDER_REQUEST_FAILED.value
         self._record_route_attempt(route_attempt)
         raise ProviderRequestError("All providers failed: " + "; ".join(errors) if errors else "No providers available")
 

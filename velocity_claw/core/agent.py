@@ -14,6 +14,7 @@ from velocity_claw.core.auto_fix import AutoFixLoop
 from velocity_claw.core.modes import build_mode_task, HIGH_LEVEL_MODES
 from velocity_claw.core.step_guard import StepExecutionGuard
 from velocity_claw.timestamps import utc_now_iso
+from velocity_claw.failures import classify_failure
 
 
 class VelocityClawAgent:
@@ -177,6 +178,7 @@ class VelocityClawAgent:
 
     async def run_task(self, task: str, context: Optional[Dict] = None) -> Dict:
         run_id = self.memory.create_run(task)
+        phase = "planning"
         self.logger.info("Starting run %s for task: %s", run_id, task)
         self.memory.save_project_fact("last_task", task)
         self.memory.save_project_note("task", task)
@@ -187,6 +189,7 @@ class VelocityClawAgent:
             resume_context = self.memory.build_resume_context(task)
             resume_context["project_memory_v2"] = project_memory_v2
             plan = await self.planner.create_plan(task, planning_context)
+            phase = "execution"
             self.memory.save_artifact(run_id, "run_plan", json.dumps(plan, ensure_ascii=False), artifact_type="plan")
             self.memory.save_artifact(run_id, "planning_context", json.dumps(planning_context, ensure_ascii=False), artifact_type="planning_context")
             self.memory.save_artifact(run_id, "resume_context", json.dumps(resume_context, ensure_ascii=False), artifact_type="resume_context")
@@ -239,8 +242,32 @@ class VelocityClawAgent:
             return report
         except Exception as e:
             self.logger.error("Run %s failed: %s", run_id, e)
+            error_type = classify_failure(e, phase=phase)
+            if phase == "planning":
+                failure_step = {
+                    "id": 0,
+                    "title": "Create execution plan",
+                    "tool": "planner",
+                    "args": {},
+                    "status": "failed",
+                    "result": None,
+                    "error": str(e),
+                    "error_type": error_type,
+                    "started_at": utc_now_iso(),
+                    "completed_at": utc_now_iso(),
+                }
+                self.memory.save_step(run_id, failure_step)
+            self.memory.save_artifact(
+                run_id,
+                "run_failure",
+                json.dumps({"phase": phase, "error_type": error_type}, ensure_ascii=False),
+                artifact_type="failure",
+            )
             self.memory.update_run_status(run_id, "failed")
-            self.memory.save_project_note("run_error", f"Run {run_id} failed: {e}")
+            self.memory.save_project_note(
+                "run_error",
+                f"Run {run_id} failed with {error_type}: {e}",
+            )
             raise
 
     def _pause_for_approval(self, run_id: str, task: str, step: dict, started_at: str, profile_name: str, results: list, boundary_type: str) -> dict:
@@ -255,6 +282,7 @@ class VelocityClawAgent:
             "status": "pending_approval",
             "result": approval,
             "error": None,
+            "error_type": None,
             "started_at": started_at,
             "completed_at": completed_at,
         }

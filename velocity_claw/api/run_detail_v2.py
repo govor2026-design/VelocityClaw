@@ -80,6 +80,7 @@ def build_step_index(run: dict[str, Any]) -> dict[str, Any]:
             "completed_at": step.get("completed_at"),
             "has_error": bool(step.get("error")),
             "error": step.get("error"),
+            "error_type": step.get("error_type"),
         }
         attempt_records.append(item)
         history_by_step[str(step.get("id"))].append(item)
@@ -95,6 +96,7 @@ def build_step_index(run: dict[str, Any]) -> dict[str, Any]:
                 "title": step.get("title"),
                 "tool": step.get("tool"),
                 "error": step.get("error"),
+                "error_type": step.get("error_type"),
                 "attempt_no": step.get("attempt_no", 1),
                 "phase": step.get("phase", "initial"),
             }
@@ -123,6 +125,7 @@ def build_step_index(run: dict[str, Any]) -> dict[str, Any]:
                 "started_at": step.get("started_at"),
                 "completed_at": step.get("completed_at"),
                 "has_error": bool(step.get("error")),
+                "error_type": step.get("error_type"),
             }
             for step in effective
         ],

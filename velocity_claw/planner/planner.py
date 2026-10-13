@@ -4,6 +4,7 @@ from typing import Dict, List
 from pydantic import BaseModel, ValidationError
 from velocity_claw.models.router import ModelRouter
 from velocity_claw.logs.logger import get_logger
+from velocity_claw.failures import PlanningError
 
 
 class PlanStep(BaseModel):
@@ -158,4 +159,4 @@ class Planner:
             return Plan(**data)
         except (json.JSONDecodeError, ValidationError, ValueError) as exc:
             self.logger.error("Failed to parse plan: %s", exc)
-            raise ValueError(f"Invalid plan format: {exc}") from exc
+            raise PlanningError(f"Invalid plan format: {exc}") from exc

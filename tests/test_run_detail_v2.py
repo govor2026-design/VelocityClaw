@@ -18,7 +18,7 @@ def make_run():
         "steps": [
             {"id": 1, "title": "Inspect", "tool": "fs.read", "status": "success", "error": None, "started_at": "a", "completed_at": "b"},
             {"id": 2, "title": "Apply patch", "tool": "patch.apply", "status": "pending_approval", "error": None, "started_at": "b", "completed_at": "c"},
-            {"id": 3, "title": "Run tests", "tool": "test.run", "status": "failed", "error": "pytest failed", "started_at": "c", "completed_at": "d"},
+            {"id": 3, "title": "Run tests", "tool": "test.run", "status": "failed", "error": "pytest failed", "error_type": "test_failed", "started_at": "c", "completed_at": "d"},
         ],
         "artifacts": [
             {"step_id": None, "name": "run_plan", "artifact_type": "plan", "content": "{}", "created_at": "now"},
@@ -78,6 +78,7 @@ def test_build_step_index_exposes_failed_and_pending_steps():
     assert index["status_counts"]["pending_approval"] == 1
     assert index["status_counts"]["failed"] == 1
     assert index["failed_steps"][0]["id"] == 3
+    assert index["failed_steps"][0]["error_type"] == "test_failed"
     assert index["pending_approval_steps"][0]["approval_detail_url"] == f"/approvals/v2/{RUN_ID}/2"
 
 
@@ -103,6 +104,7 @@ def test_run_detail_v2_endpoint_returns_summary():
     assert payload["status"] == "ok"
     assert payload["run"]["run_id"] == RUN_ID
     assert payload["run"]["step_index"]["failed_steps"][0]["error"] == "pytest failed"
+    assert payload["run"]["step_index"]["failed_steps"][0]["error_type"] == "test_failed"
 
 
 def test_run_artifacts_v2_endpoint_returns_index():

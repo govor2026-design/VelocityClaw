@@ -140,7 +140,12 @@ class RouterHardeningV2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             router.route_history[0]["attempts"],
             [
-                {"provider": "openai", "status": "failed", "error": "Empty response from provider"},
+                {
+                    "provider": "openai",
+                    "status": "failed",
+                    "error": "Empty response from provider",
+                    "error_type": "provider_response_invalid",
+                },
                 {"provider": "openrouter", "status": "success"},
             ],
         )
@@ -202,6 +207,7 @@ class RouterHardeningV2Tests(unittest.IsolatedAsyncioTestCase):
                     "provider": "openai",
                     "status": "failed",
                     "error": "Provider request timed out after 7s",
+                    "error_type": "provider_request_failed",
                 },
                 {"provider": "openrouter", "status": "success"},
             ],

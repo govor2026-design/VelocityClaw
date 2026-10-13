@@ -97,6 +97,7 @@ def compact_step_inspector(run: Mapping[str, Any] | None) -> dict[str, Any] | No
                     "tool": item.get("tool") or item.get("action") or "",
                     "status": item.get("status") or "unknown",
                     "error": _preview(item.get("error")),
+                    "error_type": item.get("error_type"),
                     "result": result,
                     "result_preview": result,
                 }

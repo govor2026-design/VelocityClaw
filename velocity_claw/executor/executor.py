@@ -12,6 +12,7 @@ from velocity_claw.tools.code_nav import CodeNavigationTool
 from velocity_claw.tools.test_runner import TestRunnerTool
 from velocity_claw.security.policy import SecurityManager, AccessProfile
 from velocity_claw.config.settings import Settings
+from velocity_claw.failures import FailureType, UnknownToolError, classify_failure
 
 
 class Executor:
@@ -71,6 +72,7 @@ class Executor:
                         "status": "failed",
                         "result": result,
                         "error": f"test_run_{runner_status or 'failed'}",
+                        "error_type": FailureType.TEST_FAILED.value,
                     }
             simulated = isinstance(result, dict) and result.get("status") == "simulated"
             if simulated:
@@ -80,11 +82,19 @@ class Executor:
                 "status": "success",
                 "result": result,
                 "error": None,
+                "error_type": None,
                 "simulated": simulated,
             }
         except Exception as exc:
             self.logger.exception("Step %s failed: %s", step_id, exc)
-            return {**base_result, "status": "failed", "result": None, "error": str(exc), "simulated": False}
+            return {
+                **base_result,
+                "status": "failed",
+                "result": None,
+                "error": str(exc),
+                "error_type": classify_failure(exc, phase="tool", tool=tool),
+                "simulated": False,
+            }
 
     def _dry_run_enabled(self, args: Dict) -> bool:
         return bool(self.settings.dry_run or args.get("dry_run") is True)
@@ -221,7 +231,7 @@ class Executor:
         if tool == "analysis":
             response = await self.router.route("analysis", args["prompt"])
             return response.get("text", "") if isinstance(response, dict) else str(response)
-        raise ValueError(f"Unknown tool: {tool}")
+        raise UnknownToolError(f"Unknown tool: {tool}")
 
     def _extract_summary(self, results: List[Dict]) -> str:
         success = [result for result in results if result["status"] == "success"]

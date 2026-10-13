@@ -122,6 +122,7 @@ def test_approval_cannot_override_safe_profile_hard_deny():
 
         assert outcome["state"] == "blocked"
         assert outcome["step_result"]["status"] == "failed"
+        assert outcome["step_result"]["error_type"] == "policy_denied"
         assert "denied by execution profile safe" in outcome["step_result"]["error"]
         assert security.calls == []
         assert executor.calls == []
@@ -152,6 +153,7 @@ def test_security_failure_is_structured_and_executor_is_not_called():
         assert outcome["state"] == "security_failed"
         assert outcome["step_result"]["status"] == "failed"
         assert outcome["step_result"]["error"] == "security blocked command"
+        assert outcome["step_result"]["error_type"] == "security_violation"
         assert executor.calls == []
 
     asyncio.run(scenario())

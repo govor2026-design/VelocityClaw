@@ -2,10 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 from velocity_claw.config.settings import Settings
-
-
-class SecurityViolationError(ValueError):
-    """Raised when an action violates agent security policy."""
+from velocity_claw.failures import SecurityViolationError
 
 
 @dataclass
