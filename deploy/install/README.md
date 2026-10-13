@@ -15,7 +15,7 @@ It creates or updates:
 - state directory: `/var/lib/velocity-claw`
 - log directory: `/var/log/velocity-claw`
 - Python virtual environment under `/opt/velocityclaw/.venv`
-- systemd service and tmpfiles configuration
+- API systemd service, optional Telegram service, and tmpfiles configuration
 
 ## Safety model
 
@@ -42,3 +42,9 @@ sudo deploy/install/install.sh
 ```
 
 Review `/etc/velocity-claw/velocity-claw.env` before starting the service.
+
+The installer enables the API service. To add Telegram, set `VELOCITY_CLAW_TELEGRAM_TOKEN` and `VELOCITY_CLAW_TELEGRAM_CHAT_ID` in that env file, then run:
+
+```bash
+sudo systemctl enable --now velocity-claw-telegram
+```

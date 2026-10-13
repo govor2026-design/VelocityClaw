@@ -8,6 +8,7 @@ CONFIG_DIR="${CONFIG_DIR:-/etc/velocity-claw}"
 STATE_DIR="${STATE_DIR:-/var/lib/velocity-claw}"
 LOG_DIR="${LOG_DIR:-/var/log/velocity-claw}"
 SERVICE_NAME="${SERVICE_NAME:-velocity-claw}"
+TELEGRAM_SERVICE_NAME="${TELEGRAM_SERVICE_NAME:-velocity-claw-telegram}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 API_KEY_PLACEHOLDER="change-this-long-random-key"
 
@@ -93,8 +94,10 @@ install_config() {
 
 install_systemd() {
   require_file "$APP_DIR/deploy/systemd/velocity-claw.service"
+  require_file "$APP_DIR/deploy/systemd/velocity-claw-telegram.service"
   require_file "$APP_DIR/deploy/systemd/velocity-claw.tmpfiles.conf"
   cp "$APP_DIR/deploy/systemd/velocity-claw.service" "/etc/systemd/system/$SERVICE_NAME.service"
+  cp "$APP_DIR/deploy/systemd/velocity-claw-telegram.service" "/etc/systemd/system/$TELEGRAM_SERVICE_NAME.service"
   cp "$APP_DIR/deploy/systemd/velocity-claw.tmpfiles.conf" "/etc/tmpfiles.d/$SERVICE_NAME.conf"
   systemd-tmpfiles --create "/etc/tmpfiles.d/$SERVICE_NAME.conf"
   systemctl daemon-reload
@@ -106,6 +109,7 @@ print_summary() {
 Velocity Claw installation finished.
 
 Service: $SERVICE_NAME
+Optional Telegram service: $TELEGRAM_SERVICE_NAME
 App dir: $APP_DIR
 Config: $CONFIG_DIR/velocity-claw.env
 State: $STATE_DIR
@@ -115,6 +119,8 @@ Next steps:
 1. Review $CONFIG_DIR/velocity-claw.env and keep VELOCITY_CLAW_API_KEY private
 2. Start the service with: systemctl start $SERVICE_NAME
 3. Check status with: systemctl status $SERVICE_NAME --no-pager
+4. To enable Telegram, set VELOCITY_CLAW_TELEGRAM_TOKEN and VELOCITY_CLAW_TELEGRAM_CHAT_ID
+5. Start Telegram with: systemctl enable --now $TELEGRAM_SERVICE_NAME
 EOF
 }
 

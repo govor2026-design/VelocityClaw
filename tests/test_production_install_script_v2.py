@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 INSTALLER = Path("deploy/install/install.sh")
 README = Path("deploy/install/README.md")
 
@@ -24,11 +23,21 @@ def test_install_script_uses_expected_production_paths():
 def test_install_script_installs_systemd_assets_and_config_permissions():
     content = INSTALLER.read_text(encoding="utf-8")
     assert "deploy/systemd/velocity-claw.service" in content
+    assert "deploy/systemd/velocity-claw-telegram.service" in content
+    assert 'TELEGRAM_SERVICE_NAME="${TELEGRAM_SERVICE_NAME:-velocity-claw-telegram}"' in content
     assert "deploy/systemd/velocity-claw.tmpfiles.conf" in content
     assert "systemctl daemon-reload" in content
     assert "systemctl enable" in content
     assert "chmod 0640" in content
     assert "chown root:\"$APP_GROUP\"" in content
+
+
+def test_installer_keeps_telegram_service_opt_in():
+    content = INSTALLER.read_text(encoding="utf-8")
+
+    assert 'systemctl enable "$SERVICE_NAME"' in content
+    assert 'systemctl enable "$TELEGRAM_SERVICE_NAME"' not in content
+    assert "systemctl enable --now $TELEGRAM_SERVICE_NAME" in content
 
 
 def test_install_readme_documents_safe_defaults():

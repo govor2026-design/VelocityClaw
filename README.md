@@ -88,6 +88,12 @@ Run the API:
 API_KEY="change-this-long-random-key" python cli.py --server
 ```
 
+Run Telegram for the single allowed chat:
+
+```bash
+TELEGRAM_TOKEN="bot-token" TELEGRAM_CHAT_ID="allowed-chat-id" python cli.py --telegram
+```
+
 Call protected API endpoints:
 
 ```bash
