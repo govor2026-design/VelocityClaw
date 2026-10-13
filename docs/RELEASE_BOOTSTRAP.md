@@ -11,7 +11,7 @@ Use the manual `release` workflow only when the expected tag or GitHub Release w
 1. Identify the exact historical commit that contains the intended `VERSION`.
 2. Open **Actions** and select the **release** workflow.
 3. Choose **Run workflow** on branch `master`.
-4. Enter the expected tag, for example `v0.2.4`.
+4. Enter the expected tag, for example `v0.3.0`.
 5. Enter the full 40-character historical commit SHA as `target_sha`.
 6. Start the workflow.
 

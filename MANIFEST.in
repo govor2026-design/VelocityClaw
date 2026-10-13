@@ -1,0 +1,17 @@
+include CHANGELOG.md
+include ARCHITECTURE.md
+include ISSUE_BACKLOG.md
+include RUNBOOK.md
+include SECURITY.md
+include VERSION
+include requirements.txt
+include Dockerfile
+include cli.py
+include .env.example
+include .dockerignore
+recursive-include docs *.md
+recursive-include deploy *
+recursive-include scripts *.py
+recursive-include .github/workflows *.yml
+global-exclude __pycache__
+global-exclude *.py[cod]
