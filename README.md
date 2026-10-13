@@ -38,7 +38,7 @@ It is designed for self-hosted development automation where auditability and own
 - security policy for paths, commands, URLs, and git operations
 - approval workflow with operator hints
 - persistent memory for runs, steps, artifacts, project facts, approvals, and fix attempts
-- retry/replay context from previous run reports and forensics
+- bounded transient step retries plus retry/replay context from previous run reports and forensics
 
 ### Code and repository tools
 
@@ -234,6 +234,7 @@ API guide:
 
 - `docs/API.md`
 - `docs/FAILURE_TYPES.md`
+- `docs/STEP_RETRIES.md`
 
 Release guide:
 
@@ -289,6 +290,7 @@ docs/
   API.md          API endpoint guide
   DEPLOYMENT.md   unified deployment guide
   FAILURE_TYPES.md stable machine-readable failure contract
+  STEP_RETRIES.md  bounded automatic step retry contract
   RELEASE.md      release checklist and versioning guide
 ```
 

@@ -6,12 +6,12 @@ This document contains the prioritized development backlog for VelocityClaw.
 
 ## Implementation status — 2026-10-13
 
-The original foundation backlog is **16 of 18 issues complete**. Two issues are partially complete and are not blockers for a single-owner Telegram/API deployment.
+The original foundation backlog is **17 of 18 issues complete**. The remaining partial issue is optional for a single-owner Telegram/API deployment.
 
 | Issue | Status | Current implementation |
 | --- | --- | --- |
 | 1. Dry-run mode | Complete | Runtime setting and write/patch/test simulation are covered by safety tests. |
-| 2. Per-step retry policy | Partial | Provider, queue, run-resume, and auto-fix retries exist; a generic transient retry wrapper for every execution step is still missing. |
+| 2. Per-step retry policy | Complete | Explicitly transient failures retry with bounded configurable backoff; unsafe or deterministic failures stop immediately and every attempt is persisted. |
 | 3. Failure classification | Complete | A stable `error_type` contract is persisted and exposed across planner, executor, tool, security, provider, API, dashboard, and forensic boundaries. |
 | 4. Patch-based editing | Complete | Patch engine supports targeted block, function, and class operations with diffs. |
 | 5. Symbol-aware navigation | Complete | Code navigation can locate and read functions, classes, imports, and references. |

@@ -315,18 +315,21 @@ class FailedRunResumer:
                 )
                 return paused
 
-            step_result = outcome["step_result"]
-            step_result["attempt_no"] = attempt_no
-            step_result["phase"] = "failed_resume"
-            self.agent.memory.save_step(
-                run["run_id"],
-                step_result,
-                attempt_no=attempt_no,
-                phase="failed_resume",
-            )
-            self.agent._persist_artifacts(run["run_id"], step_result)
+            attempts = list(outcome.get("attempts") or [outcome["step_result"]])
+            for offset, attempt in enumerate(attempts):
+                attempt["attempt_no"] = attempt_no + offset
+                attempt["phase"] = "failed_resume"
+                attempt.setdefault("retry_count", offset)
+                self.agent.memory.save_step(
+                    run["run_id"],
+                    attempt,
+                    attempt_no=attempt["attempt_no"],
+                    phase=attempt["phase"],
+                )
+                self.agent._persist_artifacts(run["run_id"], attempt)
+                records.append(attempt)
+            step_result = attempts[-1]
             executed.append(step_result)
-            records.append(step_result)
 
             if step_result.get("status") == "failed":
                 self.agent.memory.update_run_status(run["run_id"], "failed")

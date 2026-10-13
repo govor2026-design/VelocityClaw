@@ -33,6 +33,10 @@ class StepResponse(BaseModel):
     result: Optional[Any] = None
     error: Optional[str] = None
     error_type: Optional[str] = None
+    retryable: Optional[bool] = None
+    attempt_no: Optional[int] = None
+    phase: Optional[str] = None
+    retry_count: Optional[int] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
 

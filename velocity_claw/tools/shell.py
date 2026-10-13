@@ -52,8 +52,8 @@ class ShellTool:
                 text=True,
                 timeout=timeout,
             )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"Command timed out after {timeout}s")
+        except subprocess.TimeoutExpired as exc:
+            raise TimeoutError(f"Command timed out after {timeout}s") from exc
         except FileNotFoundError as e:
             raise RuntimeError(f"Command not found: {e}")
         return {

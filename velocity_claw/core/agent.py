@@ -35,6 +35,8 @@ class VelocityClawAgent:
             executor=self.executor,
             profile_selector=self._get_profile_for_tool,
             logger=self.logger,
+            max_retries=settings.step_max_retries,
+            retry_backoff_ms=settings.step_retry_backoff_ms,
         )
         self.auto_fix = AutoFixLoop(self.executor.patch, self.executor.test_runner, self.executor.code_nav)
 
@@ -218,10 +220,8 @@ class VelocityClawAgent:
                         boundary_type="initial_pause",
                     )
 
-                step_result = outcome["step_result"]
+                step_result = self._persist_step_attempts(run_id, outcome)
                 results.append(step_result)
-                self.memory.save_step(run_id, step_result)
-                self._persist_artifacts(run_id, step_result)
                 if step_result["status"] == "failed":
                     break
 
@@ -427,9 +427,7 @@ class VelocityClawAgent:
                     "pause": pause,
                 }
 
-            result = outcome["step_result"]
-            self.memory.save_step(run_id, result)
-            self._persist_artifacts(run_id, result)
+            result = self._persist_step_attempts(run_id, outcome)
             executed.append(result)
             if result.get("status") == "failed":
                 self.memory.update_run_status(run_id, "failed")
@@ -461,6 +459,16 @@ class VelocityClawAgent:
         if total_count == 0:
             return "No steps executed."
         return f"Executed {success_count}/{total_count} steps successfully."
+
+    def _persist_step_attempts(self, run_id: str, outcome: Dict) -> Dict:
+        attempts = list(outcome.get("attempts") or [outcome["step_result"]])
+        for index, attempt in enumerate(attempts, start=1):
+            attempt.setdefault("attempt_no", index)
+            attempt.setdefault("phase", "initial")
+            attempt.setdefault("retry_count", index - 1)
+            self.memory.save_step(run_id, attempt)
+            self._persist_artifacts(run_id, attempt)
+        return attempts[-1]
 
     def _persist_artifacts(self, run_id: str, step_result: Dict) -> None:
         result = step_result.get("result")

@@ -133,6 +133,8 @@ def build_diagnostics_v2(
             "shell_enabled": getattr(settings, "shell_enabled", None),
             "git_enabled": getattr(settings, "git_enabled", None),
             "dry_run": getattr(settings, "dry_run", None),
+            "step_max_retries": getattr(settings, "step_max_retries", None),
+            "step_retry_backoff_ms": getattr(settings, "step_retry_backoff_ms", None),
         },
         "release": {
             "readiness": release_state.get("readiness"),

@@ -2,6 +2,7 @@ import aiohttp
 from typing import Dict, Optional
 from urllib.parse import urlparse
 from velocity_claw.config.settings import Settings
+from velocity_claw.failures import TransientToolError
 
 
 class HTTPTool:
@@ -20,6 +21,15 @@ class HTTPTool:
         except Exception as e:
             raise ValueError(f"Invalid URL: {e}")
         return url
+
+    @staticmethod
+    def _request_error(error: aiohttp.ClientError) -> RuntimeError:
+        if isinstance(error, aiohttp.ClientResponseError):
+            detail = f"HTTP {error.status}: {error.message or 'request failed'}"
+            if error.status == 429 or error.status >= 500:
+                return TransientToolError(detail)
+            return RuntimeError(detail)
+        return TransientToolError(f"HTTP request failed: {error}")
 
     async def get(self, url: str, headers: Optional[Dict] = None, params: Optional[Dict] = None) -> Dict:
         validated_url = self._validate_url(url)
@@ -49,7 +59,7 @@ class HTTPTool:
                         "body": text
                     }
         except aiohttp.ClientError as e:
-            raise RuntimeError(f"HTTP request failed: {e}")
+            raise self._request_error(e) from e
 
     async def post(self, url: str, json_payload: Dict, headers: Optional[Dict] = None) -> Dict:
         validated_url = self._validate_url(url)
@@ -79,4 +89,4 @@ class HTTPTool:
                         "body": text
                     }
         except aiohttp.ClientError as e:
-            raise RuntimeError(f"HTTP request failed: {e}")
+            raise self._request_error(e) from e
