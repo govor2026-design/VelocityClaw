@@ -22,7 +22,8 @@ The installer prepares:
 - state directory: `/var/lib/velocity-claw`
 - log directory: `/var/log/velocity-claw`
 - Python virtual environment
-- systemd unit
+- API systemd unit
+- optional Telegram systemd unit
 - tmpfiles runtime directories
 
 After installation, review `/etc/velocity-claw/velocity-claw.env` before starting the service.
@@ -55,11 +56,12 @@ Use manual systemd deployment when you want to copy and adjust unit files yourse
 Relevant files:
 
 - `deploy/systemd/velocity-claw.service`
+- `deploy/systemd/velocity-claw-telegram.service`
 - `deploy/systemd/velocity-claw.env.example`
 - `deploy/systemd/velocity-claw.tmpfiles.conf`
 - `deploy/systemd/README.md`
 
-The systemd unit runs the API service with hardened defaults such as:
+The systemd units run API and Telegram independently with the same hardened defaults such as:
 
 - dedicated unprivileged user
 - `NoNewPrivileges=true`
@@ -82,6 +84,7 @@ Relevant files:
 The Compose template includes:
 
 - API healthcheck
+- optional `telegram` profile for persistent bot polling
 - persistent data volume
 - persistent log volume
 - dropped Linux capabilities
@@ -108,6 +111,7 @@ Enable shell or git only on isolated, trusted deployments where the operator acc
 For a healthy deployment, verify:
 
 - the API service starts successfully
+- the Telegram service is enabled only after token and allowed chat configuration
 - `/health` responds through the configured API port
 - protected API routes require `X-API-Key` or Bearer authentication
 - `/version` returns the expected deployed version and runtime profile

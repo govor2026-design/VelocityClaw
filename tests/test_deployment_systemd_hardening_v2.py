@@ -15,6 +15,21 @@ def test_systemd_service_has_hardening_directives():
     assert "SystemCallArchitectures=native" in content
 
 
+def test_systemd_telegram_service_has_hardening_and_polling_entrypoint():
+    content = Path("deploy/systemd/velocity-claw-telegram.service").read_text(encoding="utf-8")
+    assert "User=velocityclaw" in content
+    assert "EnvironmentFile=/etc/velocity-claw/velocity-claw.env" in content
+    assert "ExecStart=/opt/velocityclaw/.venv/bin/python cli.py --telegram" in content
+    assert "Restart=on-failure" in content
+    assert "KillSignal=SIGINT" in content
+    assert "NoNewPrivileges=true" in content
+    assert "PrivateTmp=true" in content
+    assert "ProtectSystem=full" in content
+    assert "ProtectHome=true" in content
+    assert "CapabilityBoundingSet=" in content
+    assert "SystemCallArchitectures=native" in content
+
+
 def test_systemd_env_example_defaults_to_safe_profile():
     content = Path("deploy/systemd/velocity-claw.env.example").read_text(encoding="utf-8")
     assert "VELOCITY_CLAW_ENV=production" in content
@@ -22,6 +37,8 @@ def test_systemd_env_example_defaults_to_safe_profile():
     assert "VELOCITY_CLAW_TRUSTED_MODE=false" in content
     assert "VELOCITY_CLAW_EXECUTION_PROFILE=safe" in content
     assert "VELOCITY_CLAW_SHELL_ENABLED=false" in content
+    assert "VELOCITY_CLAW_TELEGRAM_TOKEN=" in content
+    assert "VELOCITY_CLAW_TELEGRAM_CHAT_ID=" in content
 
 
 def test_systemd_tmpfiles_declares_runtime_directories():
