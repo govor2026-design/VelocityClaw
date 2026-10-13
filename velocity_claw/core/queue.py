@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from velocity_claw.sqlite import enable_wal, open_database
 from velocity_claw.timestamps import utc_now_iso
 
 
@@ -121,7 +121,8 @@ class RunQueue:
 
     def _ensure_tables(self) -> None:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
+            enable_wal(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS queue_jobs (
@@ -155,7 +156,7 @@ class RunQueue:
                     conn.execute(f"ALTER TABLE queue_jobs ADD COLUMN {column} {definition}")
 
     def _load_jobs_from_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 """
                 SELECT job_id, task, context, status, created_at, updated_at,
@@ -188,7 +189,7 @@ class RunQueue:
     def _persist_job(self, job: QueueJob) -> None:
         if not self.db_path:
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO queue_jobs (

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
+
+from velocity_claw.sqlite import open_database
 
 
 UNKNOWN_PROFILE = "unknown"
@@ -31,7 +32,7 @@ def install_run_profile_schema(memory_cls: type) -> None:
         original_ensure_tables(self)
         if not getattr(self, "enabled", False):
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
             if "execution_profile" not in columns:
                 conn.execute(
@@ -49,7 +50,7 @@ def install_run_profile_schema(memory_cls: type) -> None:
         profile = normalize_profile(
             execution_profile or getattr(getattr(self, "settings", None), "execution_profile", None)
         )
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "UPDATE runs SET execution_profile = ? WHERE run_id = ?",
                 (profile, run_id),
@@ -62,7 +63,7 @@ def install_run_profile_schema(memory_cls: type) -> None:
             return None
         profile = UNKNOWN_PROFILE
         if getattr(self, "enabled", False):
-            with sqlite3.connect(self.db_path) as conn:
+            with open_database(self.db_path) as conn:
                 row = conn.execute(
                     "SELECT execution_profile FROM runs WHERE run_id = ?",
                     (run_id,),
@@ -83,7 +84,7 @@ def install_run_profile_schema(memory_cls: type) -> None:
         placeholders = ",".join("?" for _ in run_ids)
         profiles: dict[str, str] = {}
         if run_ids:
-            with sqlite3.connect(self.db_path) as conn:
+            with open_database(self.db_path) as conn:
                 rows = conn.execute(
                     f"SELECT run_id, execution_profile FROM runs WHERE run_id IN ({placeholders})",
                     run_ids,

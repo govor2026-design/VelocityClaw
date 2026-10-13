@@ -1,10 +1,10 @@
-import sqlite3
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 from velocity_claw.config.settings import Settings
+from velocity_claw.sqlite import enable_wal, open_database
 from velocity_claw.timestamps import utc_now_iso
 
 
@@ -19,8 +19,8 @@ class MemoryStore:
         if not self.enabled:
             return
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
+        with open_database(self.db_path) as conn:
+            enable_wal(conn)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS runs (
                     run_id TEXT PRIMARY KEY,
@@ -113,7 +113,7 @@ class MemoryStore:
         if not self.enabled:
             return str(uuid.uuid4())
         run_id = str(uuid.uuid4())
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO runs (run_id, task, status) VALUES (?, ?, ?)",
                 (run_id, task, "running")
@@ -123,7 +123,7 @@ class MemoryStore:
     def save_step(self, run_id: str, step: Dict) -> None:
         if not self.enabled:
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute("""
                 INSERT INTO steps (run_id, step_id, title, tool, args, status, result, error, started_at, completed_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -143,7 +143,7 @@ class MemoryStore:
     def update_run_status(self, run_id: str, status: str) -> None:
         if not self.enabled:
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "UPDATE runs SET status = ?, completed_at = ? WHERE run_id = ?",
                 (status, utc_now_iso() if status in ["completed", "failed", "rejected"] else None, run_id)
@@ -152,7 +152,7 @@ class MemoryStore:
     def load_run(self, run_id: str) -> Optional[Dict]:
         if not self.enabled:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             run_row = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
             if not run_row:
                 return None
@@ -174,7 +174,7 @@ class MemoryStore:
     def load_steps(self, run_id: str):
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             steps = conn.execute(
                 "SELECT step_id, title, tool, args, status, result, error, started_at, completed_at FROM steps WHERE run_id = ? ORDER BY step_id, id",
                 (run_id,)
@@ -198,7 +198,7 @@ class MemoryStore:
         if not self.enabled:
             return
         payload = json.dumps(value, ensure_ascii=False)
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO preferences (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, payload),
@@ -207,14 +207,14 @@ class MemoryStore:
     def load_preference(self, key: str) -> Optional[Any]:
         if not self.enabled:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute("SELECT value FROM preferences WHERE key = ?", (key,)).fetchone()
             return json.loads(row[0]) if row else None
 
     def save_artifact(self, run_id: str, name: str, content: str, step_id: int | None = None, artifact_type: str = "text") -> None:
         if not self.enabled:
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO artifacts (run_id, step_id, name, artifact_type, content) VALUES (?, ?, ?, ?, ?)",
                 (run_id, step_id, name, artifact_type, content)
@@ -223,7 +223,7 @@ class MemoryStore:
     def load_artifacts(self, run_id: str):
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT step_id, name, artifact_type, content, created_at FROM artifacts WHERE run_id = ? ORDER BY id",
                 (run_id,),
@@ -237,7 +237,7 @@ class MemoryStore:
         if not self.enabled:
             return
         payload = json.dumps(value, ensure_ascii=False)
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO project_facts (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
                 (key, payload),
@@ -246,21 +246,21 @@ class MemoryStore:
     def load_project_fact(self, key: str) -> Optional[Any]:
         if not self.enabled:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute("SELECT value FROM project_facts WHERE key = ?", (key,)).fetchone()
             return json.loads(row[0]) if row else None
 
     def list_project_facts(self) -> dict:
         if not self.enabled:
             return {}
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute("SELECT key, value FROM project_facts ORDER BY key").fetchall()
         return {key: json.loads(value) for key, value in rows}
 
     def save_project_note(self, note_type: str, content: str) -> None:
         if not self.enabled:
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO project_notes (note_type, content) VALUES (?, ?)",
                 (note_type, content),
@@ -269,7 +269,7 @@ class MemoryStore:
     def load_recent_project_notes(self, limit: int = 10) -> list[dict]:
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT note_type, content, created_at FROM project_notes ORDER BY id DESC LIMIT ?",
                 (limit,),
@@ -287,7 +287,7 @@ class MemoryStore:
         do_vacuum = self.settings.memory_cleanup_vacuum if vacuum is None else vacuum
         cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
         deleted: dict[str, int] = {}
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             keep_rows = conn.execute(
                 "SELECT run_id FROM runs ORDER BY created_at DESC LIMIT ?",
                 (min_runs,),
@@ -311,7 +311,7 @@ class MemoryStore:
             deleted["project_notes"] = cursor.rowcount if cursor.rowcount is not None else 0
             conn.commit()
         if do_vacuum:
-            with sqlite3.connect(self.db_path) as conn:
+            with open_database(self.db_path) as conn:
                 conn.execute("VACUUM")
         return {
             "status": "ok",
@@ -464,7 +464,7 @@ class MemoryStore:
         if not self.enabled:
             return
         payload = json.dumps(summary, ensure_ascii=False)
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO fix_attempts (run_id, attempt_no, summary) VALUES (?, ?, ?)",
                 (run_id, attempt_no, payload),
@@ -473,7 +473,7 @@ class MemoryStore:
     def load_fix_attempts(self, run_id: str):
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT attempt_no, summary, created_at FROM fix_attempts WHERE run_id = ? ORDER BY attempt_no",
                 (run_id,),
@@ -486,7 +486,7 @@ class MemoryStore:
     def list_recent_fix_attempts(self, limit: int = 10):
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT run_id, attempt_no, summary, created_at FROM fix_attempts ORDER BY id DESC LIMIT ?",
                 (limit,),
@@ -505,7 +505,7 @@ class MemoryStore:
         if not self.enabled:
             return
         encoded = json.dumps(payload, ensure_ascii=False) if payload is not None else None
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "INSERT INTO approval_history (run_id, step_id, decision, actor, reason, payload) VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, step_id, decision, actor, reason, encoded),
@@ -514,7 +514,7 @@ class MemoryStore:
     def load_approval_history(self, run_id: str):
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT step_id, decision, actor, reason, payload, created_at FROM approval_history WHERE run_id = ? ORDER BY id",
                 (run_id,),
@@ -534,7 +534,7 @@ class MemoryStore:
     def get_last_failed_run(self) -> Optional[Dict]:
         if not self.enabled:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute(
                 "SELECT run_id FROM runs WHERE status = 'failed' ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
@@ -548,7 +548,7 @@ class MemoryStore:
     def list_recent_runs(self, limit: int = 20):
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT run_id, task, status, created_at, completed_at FROM runs ORDER BY created_at DESC LIMIT ?",
                 (limit,),
@@ -561,7 +561,7 @@ class MemoryStore:
     def list_pending_approvals(self):
         if not self.enabled:
             return []
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT run_id, step_id, title, tool, args, result, started_at, completed_at FROM steps WHERE status = 'pending_approval' ORDER BY started_at DESC"
             ).fetchall()
@@ -582,7 +582,7 @@ class MemoryStore:
     def update_step_status(self, run_id: str, step_id: int, status: str, result: Any = None, error: str | None = None) -> None:
         if not self.enabled:
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(
                 "UPDATE steps SET status = ?, result = ?, error = ?, completed_at = ? WHERE run_id = ? AND step_id = ?",
                 (status, json.dumps(result, ensure_ascii=False) if result is not None else None, error, utc_now_iso(), run_id, step_id),
