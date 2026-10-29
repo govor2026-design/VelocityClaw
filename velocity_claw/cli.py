@@ -8,7 +8,7 @@ from velocity_claw.backup import DEFAULT_BACKUP_KEEP, backup_runtime_databases
 from velocity_claw.config.settings import load_settings
 from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.core.release import ReleaseReadinessEvaluator
-from velocity_claw.core.runtime import exit_with_boundary
+from velocity_claw.core.runtime import exit_with_boundary, shutdown_state
 from velocity_claw.package_validation import validate_package
 from velocity_claw.release_notes import write_release_notes
 
@@ -136,11 +136,24 @@ def run_bot():
     VelocityClawTelegramBot(settings=load_settings()).run()
 
 
+async def run_worker() -> None:
+    from velocity_claw.core.external_worker import ExternalQueueWorker
+
+    settings = load_settings()
+    if settings.queue_execution_mode != "external":
+        raise RuntimeError(
+            "QUEUE_EXECUTION_MODE=external is required for the separate worker"
+        )
+    worker = ExternalQueueWorker(settings)
+    await worker.run_forever(lambda: shutdown_state.requested)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Velocity Claw AI Agent")
     parser.add_argument("--task", type=str, help="Run a task with the agent")
     parser.add_argument("--server", action="store_true", help="Start FastAPI server")
     parser.add_argument("--telegram", action="store_true", help="Start Telegram bot")
+    parser.add_argument("--worker", action="store_true", help="Start external queue worker")
     parser.add_argument("--status", action="store_true", help="Show agent status")
     parser.add_argument("--release-readiness", action="store_true", help="Show release readiness report")
     parser.add_argument("--validate-package", action="store_true", help="Validate package metadata")
@@ -165,6 +178,8 @@ def main():
         run_server()
     elif args.telegram:
         run_bot()
+    elif args.worker:
+        asyncio.run(run_worker())
     elif args.task:
         asyncio.run(run_task_cli(args.task, as_json=args.json))
     elif args.release_readiness:

@@ -32,6 +32,16 @@ Start both API and Telegram with:
 docker compose --env-file velocity-claw.env --profile telegram up -d
 ```
 
+To use the separate queue worker, first set
+`VELOCITY_CLAW_QUEUE_EXECUTION_MODE=external` in `velocity-claw.env`, then run:
+
+```bash
+docker compose --env-file velocity-claw.env --profile worker up -d
+```
+
+The API and worker share the same data volume. Atomic SQLite leases prevent
+duplicate claims and recover jobs after a worker restart.
+
 The Telegram container uses an opt-in Compose profile so an empty token cannot create a restart loop in API-only deployments.
 
 Use standard Docker Compose status, logs, restart, and stop commands for operations.

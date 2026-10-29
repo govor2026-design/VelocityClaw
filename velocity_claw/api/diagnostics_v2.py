@@ -135,6 +135,7 @@ def build_diagnostics_v2(
             "dry_run": getattr(settings, "dry_run", None),
             "step_max_retries": getattr(settings, "step_max_retries", None),
             "step_retry_backoff_ms": getattr(settings, "step_retry_backoff_ms", None),
+            "queue_execution_mode": getattr(settings, "queue_execution_mode", None),
         },
         "release": {
             "readiness": release_state.get("readiness"),

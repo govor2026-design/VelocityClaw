@@ -97,6 +97,9 @@ class Settings:
     queue_max_attempts: int = 3
     queue_recover_on_startup: bool = True
     queue_shutdown_timeout_seconds: int = 10
+    queue_execution_mode: str = "embedded"
+    queue_worker_poll_ms: int = 500
+    queue_worker_lease_seconds: int = 300
 
     def __post_init__(self):
         self.env = get_env("ENV", self.env).strip().lower()
@@ -141,6 +144,9 @@ class Settings:
         self.queue_max_attempts = parse_int("QUEUE_MAX_ATTEMPTS", get_env("QUEUE_MAX_ATTEMPTS"), self.queue_max_attempts, min_value=1, max_value=100)
         self.queue_recover_on_startup = parse_bool(get_env("QUEUE_RECOVER_ON_STARTUP"), self.queue_recover_on_startup)
         self.queue_shutdown_timeout_seconds = parse_int("QUEUE_SHUTDOWN_TIMEOUT_SECONDS", get_env("QUEUE_SHUTDOWN_TIMEOUT_SECONDS"), self.queue_shutdown_timeout_seconds, min_value=0, max_value=3600)
+        self.queue_execution_mode = get_env("QUEUE_EXECUTION_MODE", self.queue_execution_mode).strip().lower()
+        self.queue_worker_poll_ms = parse_int("QUEUE_WORKER_POLL_MS", get_env("QUEUE_WORKER_POLL_MS"), self.queue_worker_poll_ms, min_value=10, max_value=60000)
+        self.queue_worker_lease_seconds = parse_int("QUEUE_WORKER_LEASE_SECONDS", get_env("QUEUE_WORKER_LEASE_SECONDS"), self.queue_worker_lease_seconds, min_value=5, max_value=86400)
         self.validate()
 
     def validate(self) -> None:
@@ -150,6 +156,8 @@ class Settings:
             raise SettingsValidationError("LOG_LEVEL must be a valid Python logging level")
         if self.execution_profile not in {"safe", "dev", "owner"}:
             raise SettingsValidationError("EXECUTION_PROFILE must be one of: safe, dev, owner")
+        if self.queue_execution_mode not in {"embedded", "external"}:
+            raise SettingsValidationError("QUEUE_EXECUTION_MODE must be one of: embedded, external")
         if not self.default_model:
             raise SettingsValidationError("DEFAULT_MODEL must not be empty")
         if not self.gemini_model:

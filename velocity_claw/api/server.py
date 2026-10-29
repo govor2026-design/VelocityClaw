@@ -1,5 +1,4 @@
 from typing import Any, Dict, List, Optional
-import asyncio
 import json
 import time
 from fastapi import FastAPI, HTTPException, Request
@@ -98,7 +97,13 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.logger = get_logger("velocity_claw.api")
     app.state.agent = VelocityClawAgent(settings=settings)
-    app.state.queue = RunQueue(db_path=f"{settings.memory_db_path}.queue", max_concurrency=2)
+    app.state.queue = RunQueue(
+        db_path=f"{settings.memory_db_path}.queue",
+        max_concurrency=settings.queue_max_concurrency,
+        max_attempts=settings.queue_max_attempts,
+        recover_on_startup=False,
+    )
+    app.state.queue.configure_execution_mode(settings.queue_execution_mode)
     app.state.metrics = MetricsRegistry()
     app.state.profiles = ExecutionProfileManager(settings)
     app.state.release = ReleaseReadinessEvaluator(settings)
@@ -267,8 +272,18 @@ def create_app() -> FastAPI:
     async def queue_submit(request: Request, payload: TaskRequest):
         job = app.state.queue.enqueue(payload.task, payload.context)
         refresh_runtime_metrics()
-        asyncio.create_task(app.state.queue.run_job(job.job_id, app.state.agent.run_task))
-        return ok("job", {"job_id": job.job_id, "status": job.status})
+        scheduled = False
+        if app.state.settings.queue_execution_mode == "embedded":
+            scheduled = app.state.queue.schedule(job.job_id, app.state.agent.run_task)
+        return ok(
+            "job",
+            {
+                "job_id": job.job_id,
+                "status": job.status,
+                "scheduled": scheduled,
+                "execution_mode": app.state.settings.queue_execution_mode,
+            },
+        )
 
     @app.get("/queue")
     def queue_list():

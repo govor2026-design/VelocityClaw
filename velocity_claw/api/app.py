@@ -54,16 +54,28 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
     from velocity_claw.core.queue_tracking import install_direct_run_tracking
 
     settings = getattr(app.state, "settings", None)
+    execution_mode = getattr(settings, "queue_execution_mode", "embedded")
+    external_mode = execution_mode == "external"
+    if hasattr(app.state.queue, "configure_execution_mode"):
+        app.state.queue.configure_execution_mode(execution_mode)
     if settings is not None and hasattr(app.state.queue, "configure_runtime"):
         app.state.queue.configure_runtime(
             max_concurrency=getattr(settings, "queue_max_concurrency", app.state.queue.max_concurrency),
             max_attempts=getattr(settings, "queue_max_attempts", 3),
-            recover_on_startup=getattr(settings, "queue_recover_on_startup", True),
+            recover_on_startup=(
+                False
+                if external_mode
+                else getattr(settings, "queue_recover_on_startup", True)
+            ),
         )
     install_direct_run_tracking(app.state.queue)
 
     async def startup_queue_recovery() -> None:
-        scheduled = app.state.queue.resume(app.state.agent.run_task)
+        if external_mode:
+            app.state.queue.refresh()
+            scheduled = []
+        else:
+            scheduled = app.state.queue.resume(app.state.agent.run_task)
         app.state.queue_startup_schedule = {
             "scheduled_job_ids": scheduled,
             "scheduled_count": len(scheduled),
@@ -98,7 +110,12 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
 
     @app.post("/queue/v2/recover")
     async def queue_recover_v2():
-        scheduled = app.state.queue.schedule_pending(app.state.agent.run_task)
+        if external_mode:
+            app.state.queue.recover_expired_claims()
+            app.state.queue.refresh()
+            scheduled = []
+        else:
+            scheduled = app.state.queue.schedule_pending(app.state.agent.run_task)
         return {
             "status": "ok",
             "scheduled_job_ids": scheduled,
@@ -112,7 +129,9 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
 
     @app.post("/queue/v2/resume")
     async def queue_resume_v2():
-        scheduled = app.state.queue.resume(app.state.agent.run_task)
+        scheduled = app.state.queue.resume(
+            None if external_mode else app.state.agent.run_task
+        )
         return {
             "status": "ok",
             "scheduled_job_ids": scheduled,
@@ -152,7 +171,11 @@ def install_queue_persistence_v2(app: FastAPI) -> None:
             )
         if force and job.status == "queued":
             _prepare_forced_retry(app.state.queue, job)
-        scheduled = app.state.queue.schedule(job_id, app.state.agent.run_task) if job.status == "queued" else False
+        scheduled = (
+            app.state.queue.schedule(job_id, app.state.agent.run_task)
+            if job.status == "queued" and not external_mode
+            else False
+        )
         return {
             "status": "ok",
             "job": job.__dict__,

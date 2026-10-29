@@ -55,6 +55,7 @@ It is designed for self-hosted development automation where auditability and own
 - `/version` endpoint for deployed version verification
 - operations console snapshot
 - queue foundation
+- optional separate queue worker with cross-process claims and lease recovery
 - metrics and diagnostics
 - provider/router observability
 - release readiness evaluator
@@ -291,6 +292,7 @@ docs/
   DEPLOYMENT.md   unified deployment guide
   FAILURE_TYPES.md stable machine-readable failure contract
   STEP_RETRIES.md  bounded automatic step retry contract
+  QUEUE.md         embedded and external queue worker operation
   RELEASE.md      release checklist and versioning guide
 ```
 
@@ -304,7 +306,7 @@ Known next maturity areas:
 
 - richer dashboard frontend
 - deeper approval resume UX
-- stronger persistent worker infrastructure
+- multi-node database backends beyond the single-host SQLite deployment
 - multi-project and multi-user model
 - richer artifact explorer
 - production observability stack

@@ -9,6 +9,7 @@ All notable changes to Velocity Claw are tracked here.
 - Added a documented, stable `error_type` taxonomy for planning, provider, policy, security, test, and tool failures.
 - Added automatic SQLite migration and API, dashboard, route-history, report, and forensic exposure for structured failure types.
 - Added bounded per-step retries for explicitly transient failures, with configurable backoff and persisted attempt history.
+- Added an optional external queue worker with atomic SQLite claims, leases, heartbeats, crash recovery, CLI startup, and systemd/Docker templates.
 
 ### Changed
 
