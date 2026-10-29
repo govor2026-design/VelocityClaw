@@ -2,8 +2,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from velocity_claw.api.app import install_run_detail_v2
-from velocity_claw.api.run_detail_v2 import build_artifact_index, build_run_detail_v2, build_step_index
-
+from velocity_claw.api.run_detail_v2 import (
+    build_artifact_index,
+    build_run_detail_v2,
+    build_step_index,
+)
 
 RUN_ID = "run-detail-1"
 
@@ -80,6 +83,7 @@ def test_build_step_index_exposes_failed_and_pending_steps():
     assert index["failed_steps"][0]["id"] == 3
     assert index["failed_steps"][0]["error_type"] == "test_failed"
     assert index["pending_approval_steps"][0]["approval_detail_url"] == f"/approvals/v2/{RUN_ID}/2"
+    assert index["pending_approval_steps"][0]["approval_review_url"] == f"/approvals/v2/{RUN_ID}/2/review"
 
 
 def test_build_run_detail_v2_returns_compact_operational_summary():

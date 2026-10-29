@@ -110,6 +110,7 @@ def build_step_index(run: dict[str, Any]) -> dict[str, Any]:
                 "attempt_no": step.get("attempt_no", 1),
                 "phase": step.get("phase", "initial"),
                 "approval_detail_url": f"/approvals/v2/{run.get('run_id')}/{step.get('id')}",
+                "approval_review_url": f"/approvals/v2/{run.get('run_id')}/{step.get('id')}/review",
             }
             for step in pending_approval_steps
         ],

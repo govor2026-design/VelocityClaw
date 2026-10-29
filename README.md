@@ -305,7 +305,7 @@ Velocity Claw is strong, but not finished as a full commercial SaaS product.
 Known next maturity areas:
 
 - live dashboard refresh and in-browser operator actions
-- deeper approval resume UX
+- bulk approval workflows and role-based reviewers
 - multi-node database backends beyond the single-host SQLite deployment
 - multi-project and multi-user model
 - richer artifact explorer

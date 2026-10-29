@@ -35,7 +35,8 @@ def approval_links(run_id: Any, step_id: Any) -> str:
     safe_run_id = html_escape(run_id)
     safe_step_id = html_escape(step_id)
     return (
-        f"<a href='/approvals/v2/{safe_run_id}/{safe_step_id}'>review</a> · "
+        f"<a href='/approvals/v2/{safe_run_id}/{safe_step_id}/review'>review</a> · "
+        f"<a href='/approvals/v2/{safe_run_id}/{safe_step_id}'>json</a> · "
         f"<a href='/runs/{safe_run_id}/detail/v2'>run detail</a>"
     )
 

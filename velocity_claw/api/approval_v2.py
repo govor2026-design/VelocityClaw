@@ -5,8 +5,10 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
-from velocity_claw.core.approval_continuation import approve_and_continue, reject_with_boundary
-
+from velocity_claw.core.approval_continuation import (
+    approve_and_continue,
+    reject_with_boundary,
+)
 
 TERMINAL_APPROVAL_STATUSES = {"approved", "rejected"}
 PENDING_APPROVAL_STATUS = "pending_approval"
@@ -70,10 +72,30 @@ def _continuation_events(run: dict[str, Any], step_id: int) -> list[dict[str, An
     return events
 
 
+def _step_approval_record(
+    run: dict[str, Any],
+    step_id: int,
+    step: dict[str, Any] | None,
+) -> dict[str, Any]:
+    for artifact in reversed(_step_artifacts(run, step_id)):
+        if artifact.get("artifact_type") != "approval":
+            continue
+        payload = _decode_artifact_content(artifact)
+        if isinstance(payload, dict) and any(
+            key in payload for key in ("risk_level", "triggers", "operator_hint")
+        ):
+            return payload
+    result = (step or {}).get("result")
+    return result if isinstance(result, dict) else {}
+
+
 def _approval_record(pending: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
     pending_result = pending.get("result")
     if isinstance(pending_result, dict):
         return pending_result
+    record = detail.get("approval_record")
+    if isinstance(record, dict):
+        return record
     step = detail.get("step") or {}
     step_result = step.get("result")
     return step_result if isinstance(step_result, dict) else {}
@@ -119,9 +141,11 @@ def build_approval_detail(run: dict[str, Any] | None, step_id: int) -> dict[str,
         "reason": guard.reason,
         "run_id": run.get("run_id"),
         "run_status": run.get("status"),
+        "execution_profile": run.get("execution_profile"),
         "task": run.get("task"),
         "step_id": step_id,
         "step": step,
+        "approval_record": _step_approval_record(run, step_id, step),
         "current_status": guard.current_status,
         "can_decide": guard.allowed,
         "history": _step_history(run, step_id),
@@ -129,6 +153,8 @@ def build_approval_detail(run: dict[str, Any] | None, step_id: int) -> dict[str,
         "continuation": continuation,
         "latest_continuation": continuation[-1] if continuation else None,
         "links": {
+            "review": f"/approvals/v2/{run.get('run_id')}/{step_id}/review",
+            "api_detail": f"/approvals/v2/{run.get('run_id')}/{step_id}",
             "approve": f"/approvals/v2/{run.get('run_id')}/{step_id}/approve",
             "reject": f"/approvals/v2/{run.get('run_id')}/{step_id}/reject",
             "run": f"/runs/{run.get('run_id')}",

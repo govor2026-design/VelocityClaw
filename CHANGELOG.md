@@ -10,12 +10,14 @@ All notable changes to Velocity Claw are tracked here.
 - Added automatic SQLite migration and API, dashboard, route-history, report, and forensic exposure for structured failure types.
 - Added bounded per-step retries for explicitly transient failures, with configurable backoff and persisted attempt history.
 - Added an optional external queue worker with atomic SQLite claims, leases, heartbeats, crash recovery, CLI startup, and systemd/Docker templates.
+- Added a browser approval-review surface with exact tool context, risk metadata, decision history, continuation outcomes, and guarded approve/reject controls.
 
 ### Changed
 
 - Planning failures now persist a structured synthetic step and failure artifact before the original exception crosses the API boundary.
 - Side-effecting tools and policy, security, validation, and test failures now fail immediately instead of entering retry logic.
 - Dashboard v2 run inspection now supports validated status/profile filters, multi-term search, preserved filter links, responsive tables, and visible structured error types.
+- Approval continuation now preserves the execution profile stored on the run instead of inheriting a later server-profile change.
 
 ### Fixed
 

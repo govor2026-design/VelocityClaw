@@ -43,6 +43,7 @@ The smoke script checks public health, protected-route auth behavior, authentica
 | GET | `/dashboard` | Classic HTML dashboard |
 | GET | `/dashboard/v2` | Dashboard v2 HTML overview |
 | GET | `/dashboard/v2/runs` | Searchable run and step inspector (`status`, `profile`, `q`, and `run_id` filters) |
+| GET | `/approvals/v2/{run_id}/{step_id}/review` | Browser approval review and decision surface |
 
 Diagnostics v2 includes:
 

@@ -4,8 +4,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from velocity_claw.api.app import install_approval_v2
-from velocity_claw.api.approval_v2 import build_approval_detail, build_approval_index, evaluate_approval_decision
-
+from velocity_claw.api.approval_v2 import (
+    build_approval_detail,
+    build_approval_index,
+    evaluate_approval_decision,
+)
 
 RUN_ID = "run-approval"
 
@@ -54,6 +57,7 @@ def make_run(
     started_at="2026-05-11T00:00:00Z",
     continuation_steps=None,
     include_plan=True,
+    execution_profile="safe",
 ):
     source = make_step(step_id, tool, status=step_status, risk_level=risk_level, started_at=started_at)
     approval_record = {
@@ -92,6 +96,7 @@ def make_run(
         "run_id": run_id,
         "task": f"Guarded operation with {tool}",
         "status": "awaiting_approval",
+        "execution_profile": execution_profile,
         "steps": [source],
         "artifacts": artifacts,
         "approval_history": [
@@ -292,8 +297,10 @@ def test_build_approval_detail_exposes_step_history_artifacts_and_links():
     assert len(detail["artifacts"]) == 1
     assert detail["continuation"] == []
     assert detail["links"]["approve"].endswith("/approvals/v2/run-approval/7/approve")
+    assert detail["links"]["review"] == "/approvals/v2/run-approval/7/review"
     assert detail["links"]["run_detail_v2"] == "/runs/run-approval/detail/v2"
     assert detail["links"]["run_artifacts_v2"] == "/runs/run-approval/artifacts/v2"
+    assert detail["approval_record"]["risk_level"] == "medium"
 
 
 def test_evaluate_approval_decision_blocks_non_pending_steps():
@@ -384,6 +391,35 @@ def test_approval_detail_v2_endpoint_returns_context():
     assert payload["approval"]["history"][0]["decision"] == "requested"
 
 
+def test_approval_review_page_exposes_context_and_decision_controls():
+    client, _ = make_client(make_run())
+
+    response = client.get(f"/approvals/v2/{RUN_ID}/7/review")
+
+    assert response.status_code == 200
+    assert "Approval review" in response.text
+    assert "patch.apply requires review" in response.text
+    assert "Approve and continue" in response.text
+    assert "Reject and stop" in response.text
+    assert f"/approvals/v2/{RUN_ID}/7/approve" in response.text
+    assert f"/approvals/v2/{RUN_ID}/7/reject" in response.text
+    assert "credentials: 'same-origin'" in response.text
+
+
+def test_approval_review_page_escapes_values_and_disables_terminal_decisions():
+    run = make_run(step_status="approved", tool="&lt;script&gt;")
+    run["task"] = "Review <script>alert(1)</script>"
+    client, _ = make_client(run)
+
+    response = client.get(f"/approvals/v2/{RUN_ID}/7/review")
+
+    assert response.status_code == 200
+    assert "Review &lt;script&gt;alert(1)&lt;/script&gt;" in response.text
+    assert "Review <script>alert(1)</script>" not in response.text
+    assert "This step cannot be decided: already_approved" in response.text
+    assert "data-decision='approve' disabled" in response.text
+
+
 def test_approval_v2_reject_records_terminal_boundary_and_blocks_second_decision():
     run = make_run()
     client, _ = make_client(run)
@@ -421,6 +457,7 @@ def test_approval_v2_approve_completes_without_duplicate_source_step():
     assert agent.memory.saved_steps == []
     assert payload["approval"]["reason"] == "already_approved"
     assert payload["approval"]["latest_continuation"]["payload"]["status"] == "completed"
+    assert payload["approval"]["approval_record"]["risk_level"] == "medium"
 
     second = client.post(f"/approvals/v2/{RUN_ID}/7/approve", json={"actor": "owner", "reason": "duplicate"})
     assert second.status_code == 409
@@ -461,6 +498,26 @@ def test_approval_v2_continuation_pauses_at_next_sensitive_step():
     assert run["steps"][1]["status"] == "pending_approval"
     assert [step["id"] for step in agent.memory.saved_steps] == [8]
     assert any(item["artifact_type"] == "approval_boundary" and item["step_id"] == 8 for item in run["artifacts"])
+
+
+def test_approval_v2_continuation_keeps_the_profile_stored_on_the_run():
+    source = make_step(7, "patch.apply")
+    next_step = make_step(8, "shell.run", status="planned", risk_level="high")
+    run = make_run(
+        continuation_steps=[plan_step(source), plan_step(next_step)],
+        execution_profile="dev",
+    )
+    client, _ = make_client(run, risky_step_ids={8})
+
+    response = client.post(
+        f"/approvals/v2/{RUN_ID}/7/approve",
+        json={"actor": "owner", "reason": "approved"},
+    )
+
+    assert response.status_code == 200
+    resumed = response.json()["decision"]["resume"]
+    assert resumed["status"] == "awaiting_approval"
+    assert resumed["pause"]["step"]["result"]["profile"] == "dev"
 
 
 def test_approval_v2_continuation_records_failed_boundary():

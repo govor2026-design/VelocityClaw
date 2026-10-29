@@ -145,6 +145,7 @@ def test_run_links_include_v2_and_classic_destinations():
 def test_approval_links_include_review_and_run_detail():
     html = approval_links("run-2", 3)
 
+    assert "/approvals/v2/run-2/3/review" in html
     assert "/approvals/v2/run-2/3" in html
     assert "/runs/run-2/detail/v2" in html
 
