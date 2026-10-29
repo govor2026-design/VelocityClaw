@@ -11,6 +11,7 @@ from velocity_claw.api.approval_v2 import (
     build_approval_index,
     reject_with_guard,
 )
+from velocity_claw.api.approval_review_v2 import render_approval_review_v2
 from velocity_claw.api.auth import install_api_key_auth
 from velocity_claw.api.dashboard_filters import VALID_PROFILES, VALID_RUN_STATUSES, normalize_filter
 from velocity_claw.api.dashboard_runs_v2 import render_dashboard_runs_v2
@@ -211,6 +212,20 @@ def install_approval_v2(app: FastAPI) -> None:
         if detail["status"] == "not_found":
             raise HTTPException(status_code=404, detail={"status": "failed", "error": detail["reason"], "detail": detail})
         return {"status": "ok", "approval": detail}
+
+    @app.get("/approvals/v2/{run_id}/{step_id}/review", response_class=HTMLResponse)
+    def approval_review_v2(run_id: str, step_id: int):
+        detail = build_approval_detail(app.state.agent.memory.load_run(run_id), step_id)
+        if detail["status"] == "not_found":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "status": "failed",
+                    "error": detail["reason"],
+                    "detail": detail,
+                },
+            )
+        return render_approval_review_v2(detail)
 
     @app.post("/approvals/v2/{run_id}/{step_id}/approve")
     async def approve_v2(run_id: str, step_id: int, payload: ApprovalDecisionRequest):

@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 APPROVAL_DOC = Path("docs/APPROVALS.md")
 
 
@@ -20,6 +19,8 @@ def test_approval_docs_cover_v3_outcomes_and_artifacts():
         "continuation_allowed",
         "/approvals/v2/{run_id}/{step_id}/approve",
         "/approvals/v2/{run_id}/{step_id}/reject",
+        "/approvals/v2/{run_id}/{step_id}/review",
+        "execution profile persisted on the run",
     ]
     for value in required:
         assert value in content

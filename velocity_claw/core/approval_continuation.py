@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from velocity_claw.failures import FailureType, SecurityViolationError
 from velocity_claw.timestamps import utc_now_iso
-from velocity_claw.failures import FailureType
+
+VALID_EXECUTION_PROFILES = {"safe", "dev", "owner"}
 
 
 def _now() -> str:
@@ -51,9 +53,20 @@ def _validate_step_policy(agent: Any, step: dict[str, Any], profile_name: str) -
             security.validate_url(args.get("url", ""), profile)
         elif tool == "git.run":
             security.validate_git_command(args.get("command", ""), profile)
-    except Exception as exc:
+    except SecurityViolationError as exc:
         return str(exc)
     return None
+
+
+def _profile_for_run(agent: Any, run: dict[str, Any]) -> str:
+    resolver = getattr(agent, "_profile_for_run", None)
+    if callable(resolver):
+        return resolver(run)
+
+    stored = str(run.get("execution_profile") or "").strip().lower()
+    if stored in VALID_EXECUTION_PROFILES:
+        return stored
+    return str(agent.settings.execution_profile).strip().lower()
 
 
 def _continuation_event(
@@ -263,7 +276,7 @@ async def continue_after_approval(agent: Any, run_id: str, step_id: int) -> dict
         return {**event, "executed": []}
 
     executed: list[dict[str, Any]] = []
-    profile_name = agent.settings.execution_profile
+    profile_name = _profile_for_run(agent, run)
     for index, step in enumerate(steps[start_index:], start=start_index):
         if index > start_index and agent.approvals.requires_approval(step, profile_name):
             pause = _pause_for_next_approval(

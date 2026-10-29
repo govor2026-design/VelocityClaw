@@ -8,10 +8,14 @@ Velocity Claw pauses sensitive execution steps and requires an explicit operator
 | --- | --- | --- |
 | GET | `/approvals/v2` | Risk-prioritized pending approval index |
 | GET | `/approvals/v2/{run_id}/{step_id}` | Approval detail, history, artifacts, and continuation state |
+| GET | `/approvals/v2/{run_id}/{step_id}/review` | HTML review page with context and guarded decision controls |
 | POST | `/approvals/v2/{run_id}/{step_id}/approve` | Approve and continue from the exact plan boundary |
 | POST | `/approvals/v2/{run_id}/{step_id}/reject` | Reject and terminate continuation |
 
 All endpoints except `/health` require API-key authentication in the production app.
+The HTML review page uses the same authenticated API routes and displays the
+exact tool arguments, original approval record, decision history, and
+continuation outcome before and after a decision.
 
 ## Approval continuation v3
 
@@ -28,6 +32,10 @@ When a pending step is approved, Velocity Claw:
 7. persists execution artifacts;
 8. continues until completion, failure, or the next approval boundary;
 9. writes an `approval_continuation` artifact describing the result.
+
+The continuation always uses the execution profile persisted on the run. A
+later change to the server's active profile cannot silently broaden or narrow
+the permissions of an already-paused run.
 
 ## Continuation outcomes
 
