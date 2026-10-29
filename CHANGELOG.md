@@ -15,6 +15,11 @@ All notable changes to Velocity Claw are tracked here.
 
 - Planning failures now persist a structured synthetic step and failure artifact before the original exception crosses the API boundary.
 - Side-effecting tools and policy, security, validation, and test failures now fail immediately instead of entering retry logic.
+- Dashboard v2 run inspection now supports validated status/profile filters, multi-term search, preserved filter links, responsive tables, and visible structured error types.
+
+### Fixed
+
+- Fixed `/dashboard/v2/runs` returning an internal error because filter normalization was called without its required allowlist.
 
 ## 0.3.0 - 2026-10-13
 

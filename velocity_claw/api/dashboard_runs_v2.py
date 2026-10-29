@@ -4,7 +4,11 @@ from html import escape
 from typing import Any
 from urllib.parse import urlencode
 
-from velocity_claw.api.dashboard_filters import compact_step_inspector, filter_runs, run_profile
+from velocity_claw.api.dashboard_filters import (
+    compact_step_inspector,
+    filter_runs,
+    run_profile,
+)
 from velocity_claw.api.dashboard_v2 import status_badge
 
 
@@ -17,12 +21,21 @@ def _option(value: str, selected: str | None) -> str:
     return f"<option value='{_e(value)}'{mark}>{_e(value or 'all')}</option>"
 
 
-def _run_link(run_id: Any, label: str, *, status: str | None, profile: str | None) -> str:
+def _run_link(
+    run_id: Any,
+    label: str,
+    *,
+    status: str | None,
+    profile: str | None,
+    query: str | None,
+) -> str:
     params = {"run_id": str(run_id)}
     if status:
         params["status"] = status
     if profile:
         params["profile"] = profile
+    if query:
+        params["q"] = query
     return f"<a href='/dashboard/v2/runs?{urlencode(params)}'>{_e(label)}</a>"
 
 
@@ -31,9 +44,10 @@ def render_dashboard_runs_v2(
     runs: list[dict[str, Any]],
     status: str | None = None,
     profile: str | None = None,
+    query: str | None = None,
     selected_run: dict[str, Any] | None = None,
 ) -> str:
-    filtered = filter_runs(runs, status=status, profile=profile)
+    filtered = filter_runs(runs, status=status, profile=profile, query=query)
     inspector = compact_step_inspector(selected_run)
 
     rows = []
@@ -46,7 +60,7 @@ def render_dashboard_runs_v2(
             f"<td>{status_badge(str(run.get('status') or 'unknown'))}</td>"
             f"<td>{_e(run_profile(run) or 'unknown')}</td>"
             f"<td>{_e(run.get('created_at'))}</td>"
-            f"<td>{_run_link(run_id, 'inspect', status=status, profile=profile)} · "
+            f"<td>{_run_link(run_id, 'inspect', status=status, profile=profile, query=query)} · "
             f"<a href='/runs/{_e(run_id)}/detail/v2'>detail</a> · "
             f"<a href='/runs/{_e(run_id)}/artifacts/v2'>artifacts</a></td>"
             "</tr>"
@@ -62,19 +76,20 @@ def render_dashboard_runs_v2(
                 f"<td>{_e(step.get('title'))}</td>"
                 f"<td><code>{_e(step.get('tool'))}</code></td>"
                 f"<td>{status_badge(str(step.get('status') or 'unknown'))}</td>"
+                f"<td><code>{_e(step.get('error_type') or '')}</code></td>"
                 f"<td>{_e(step.get('error') or '')}</td>"
                 f"<td><pre>{_e(step.get('result_preview') or '')}</pre></td>"
                 "</tr>"
             )
-        empty_steps_row = "<tr><td colspan='6'>No steps recorded.</td></tr>"
+        empty_steps_row = "<tr><td colspan='7'>No steps recorded.</td></tr>"
         inspector_html = (
             f"<p><code>{_e(inspector['run_id'])}</code> — {_e(inspector['task'])} "
             f"{status_badge(str(inspector.get('status') or 'unknown'))}</p>"
             f"<p class='muted'>Profile: {_e(inspector.get('profile') or 'unknown')} · "
             f"Steps: {_e(inspector['step_count'])} · Artifacts: {_e(inspector['artifact_count'])}</p>"
-            "<table><thead><tr><th>ID</th><th>Title</th><th>Tool</th><th>Status</th><th>Error</th><th>Result preview</th></tr></thead><tbody>"
+            "<div class='table-scroll'><table><thead><tr><th>ID</th><th>Title</th><th>Tool</th><th>Status</th><th>Error type</th><th>Error</th><th>Result preview</th></tr></thead><tbody>"
             f"{''.join(step_rows) or empty_steps_row}"
-            "</tbody></table>"
+            "</tbody></table></div>"
             f"<p><a href='/runs/{_e(inspector['run_id'])}/detail/v2'>Open full run detail</a> · "
             f"<a href='/runs/{_e(inspector['run_id'])}/artifacts/v2'>Open artifact index</a></p>"
         )
@@ -95,7 +110,9 @@ def render_dashboard_runs_v2(
     .muted {{ color:var(--muted); }}
     form {{ display:flex; flex-wrap:wrap; gap:12px; align-items:end; }}
     label {{ display:grid; gap:6px; color:var(--muted); }}
-    select,button {{ background:#020617; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }}
+    select,input,button {{ background:#020617; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }}
+    input {{ min-width:260px; }}
+    .table-scroll {{ overflow-x:auto; }}
     table {{ width:100%; border-collapse:collapse; }}
     th,td {{ border-bottom:1px solid var(--line); padding:10px; text-align:left; vertical-align:top; }}
     th {{ color:var(--muted); font-size:13px; }}
@@ -113,17 +130,18 @@ def render_dashboard_runs_v2(
   <p class='muted'>Filtered runs: {_e(len(filtered))} of {_e(len(runs))}</p>
   <section class='card'>
     <form method='get' action='/dashboard/v2/runs'>
-      <label>Status<select name='status'>{_option('', status)}{''.join(_option(item, status) for item in ['running','completed','failed','cancelled','paused','pending_approval'])}</select></label>
+      <label>Status<select name='status'>{_option('', status)}{''.join(_option(item, status) for item in ['queued','running','completed','failed','cancelled','paused','pending_approval','awaiting_approval'])}</select></label>
       <label>Profile<select name='profile'>{_option('', profile)}{''.join(_option(item, profile) for item in ['safe','dev','owner'])}</select></label>
+      <label>Search<input type='search' name='q' maxlength='200' value='{_e(query)}' placeholder='Run ID or task'></label>
       <button type='submit'>Apply filters</button>
       <a href='/dashboard/v2/runs'>Clear</a>
     </form>
   </section>
   <section class='card'>
     <h2>Runs</h2>
-    <table><thead><tr><th>Run ID</th><th>Task</th><th>Status</th><th>Profile</th><th>Created</th><th>Actions</th></tr></thead><tbody>
+    <div class='table-scroll'><table><thead><tr><th>Run ID</th><th>Task</th><th>Status</th><th>Profile</th><th>Created</th><th>Actions</th></tr></thead><tbody>
       {''.join(rows) or "<tr><td colspan='6'>No runs match the selected filters.</td></tr>"}
-    </tbody></table>
+    </tbody></table></div>
   </section>
   <section class='card'><h2>Step inspector</h2>{inspector_html}</section>
 </main></body></html>

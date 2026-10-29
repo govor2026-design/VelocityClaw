@@ -54,10 +54,12 @@ def filter_runs(
     runs: Iterable[Mapping[str, Any]],
     status: str | None = None,
     profile: str | None = None,
+    query: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return runs matching the requested supported status and profile."""
+    """Return runs matching the requested status, profile, and text query."""
     normalized_status = normalize_filter(status, VALID_RUN_STATUSES)
     normalized_profile = normalize_filter(profile, VALID_PROFILES)
+    query_terms = [part.casefold() for part in str(query or "").split()]
 
     filtered: list[dict[str, Any]] = []
     for item in runs:
@@ -67,6 +69,15 @@ def filter_runs(
             continue
         if normalized_profile is not None and run_profile(run) != normalized_profile:
             continue
+        if query_terms:
+            searchable = " ".join(
+                (
+                    str(run.get("run_id") or run.get("id") or ""),
+                    str(run.get("task") or run.get("title") or ""),
+                )
+            ).casefold()
+            if not all(term in searchable for term in query_terms):
+                continue
         filtered.append(run)
     return filtered
 

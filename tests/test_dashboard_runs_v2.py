@@ -1,4 +1,8 @@
-from velocity_claw.api.dashboard_filters import compact_step_inspector, filter_runs, run_profile
+from velocity_claw.api.dashboard_filters import (
+    compact_step_inspector,
+    filter_runs,
+    run_profile,
+)
 from velocity_claw.api.dashboard_runs_v2 import render_dashboard_runs_v2
 from velocity_claw.api.dashboard_v2 import render_dashboard_v2
 
@@ -38,6 +42,18 @@ def test_filter_runs_by_status_and_profile():
     assert filter_runs(runs, status="running") == []
 
 
+def test_filter_runs_searches_run_id_and_task_case_insensitively():
+    runs = sample_runs()
+
+    assert [run["run_id"] for run in filter_runs(runs, query="SAFE")] == [
+        "run-safe"
+    ]
+    assert [run["run_id"] for run in filter_runs(runs, query="owner failed")] == [
+        "run-owner"
+    ]
+    assert filter_runs(runs, query="missing") == []
+
+
 def test_run_profile_supports_direct_and_context_values():
     runs = sample_runs()
 
@@ -65,6 +81,7 @@ def test_runs_inspector_renders_filters_and_selected_steps():
         runs=runs,
         status="completed",
         profile="safe",
+        query="safe run",
         selected_run=runs[0],
     )
 
@@ -74,9 +91,12 @@ def test_runs_inspector_renders_filters_and_selected_steps():
     assert "run-owner" not in html
     assert "git.inspect" in html
     assert "assertion failed" in html
+    assert "test_failed" in html
     assert "/runs/run-safe/artifacts/v2" in html
     assert "option value='completed' selected" in html
     assert "option value='safe' selected" in html
+    assert "value='safe run'" in html
+    assert "q=safe+run" in html
 
 
 def test_main_dashboard_links_to_runs_inspector():
