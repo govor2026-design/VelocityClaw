@@ -314,13 +314,28 @@ def install_dashboard_v2(app: FastAPI) -> None:
         )
 
     @app.get("/dashboard/v2/runs", response_class=HTMLResponse)
-    def dashboard_runs_v2(status: str | None = None, profile: str | None = None, run_id: str | None = None):
-        status_filter = normalize_filter(status)
-        profile_filter = normalize_filter(profile)
-        if status_filter and status_filter not in VALID_RUN_STATUSES:
+    def dashboard_runs_v2(
+        status: str | None = None,
+        profile: str | None = None,
+        run_id: str | None = None,
+        q: str | None = None,
+    ):
+        status_filter = normalize_filter(status, VALID_RUN_STATUSES)
+        profile_filter = normalize_filter(profile, VALID_PROFILES)
+        if status is not None and status.strip() and status_filter is None:
             raise HTTPException(status_code=400, detail={"status": "failed", "error": "invalid_status_filter", "detail": sorted(VALID_RUN_STATUSES)})
-        if profile_filter and profile_filter not in VALID_PROFILES:
+        if profile is not None and profile.strip() and profile_filter is None:
             raise HTTPException(status_code=400, detail={"status": "failed", "error": "invalid_profile_filter", "detail": sorted(VALID_PROFILES)})
+        query_filter = " ".join((q or "").split()) or None
+        if query_filter is not None and len(query_filter) > 200:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "failed",
+                    "error": "invalid_query_filter",
+                    "detail": "Search query must be at most 200 characters",
+                },
+            )
 
         runs = []
         for summary in app.state.agent.memory.list_recent_runs(limit=100):
@@ -337,6 +352,7 @@ def install_dashboard_v2(app: FastAPI) -> None:
             runs=runs,
             status=status_filter,
             profile=profile_filter,
+            query=query_filter,
             selected_run=selected,
         )
 

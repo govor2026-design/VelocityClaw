@@ -3,7 +3,12 @@ from fastapi.testclient import TestClient
 
 from velocity_claw.__version__ import __release_stage__, __version__
 from velocity_claw.api.app import install_dashboard_v2
-from velocity_claw.api.dashboard_v2 import approval_links, dashboard_risk_flags, render_dashboard_v2, run_links
+from velocity_claw.api.dashboard_v2 import (
+    approval_links,
+    dashboard_risk_flags,
+    render_dashboard_v2,
+    run_links,
+)
 
 
 class FakeSettings:
@@ -51,6 +56,12 @@ class FakeMemory:
                 "created_at": "2026-05-11T00:00:00Z",
             }
         ]
+
+    def load_run(self, run_id):
+        return next(
+            (run for run in self.list_recent_runs(limit=100) if run["run_id"] == run_id),
+            None,
+        )
 
 
 class FakeRouter:
@@ -209,3 +220,19 @@ def test_dashboard_v2_endpoint_renders_operational_snapshot():
     assert "/version" in response.text
     assert __version__ in response.text
     assert "Risk flags" in response.text
+
+
+def test_dashboard_runs_endpoint_filters_searches_and_rejects_invalid_values():
+    client = TestClient(make_fake_app())
+
+    response = client.get(
+        "/dashboard/v2/runs",
+        params={"status": "completed", "q": "analyze"},
+    )
+
+    assert response.status_code == 200
+    assert "Analyze repo" in response.text
+    assert "name='q'" in response.text
+    assert "value='analyze'" in response.text
+    assert client.get("/dashboard/v2/runs?status=not-a-status").status_code == 400
+    assert client.get("/dashboard/v2/runs?profile=admin").status_code == 400
