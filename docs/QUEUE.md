@@ -1,6 +1,28 @@
 # Queue persistence and worker orchestration v2
 
-Velocity Claw stores queue jobs in SQLite and runs them through a bounded asynchronous worker orchestrator.
+Velocity Claw stores queue jobs in SQLite and can run them through either the
+API's bounded asynchronous orchestrator or a separate worker process.
+
+## Execution modes
+
+`QUEUE_EXECUTION_MODE=embedded` is the default and preserves the single-process
+behavior. The API schedules queue jobs in its own event loop.
+
+`QUEUE_EXECUTION_MODE=external` makes the API enqueue-only. Start one or more
+workers with:
+
+```bash
+python cli.py --worker
+```
+
+All API and worker processes must use the same memory path and therefore the
+same `<MEMORY_DB_PATH>.queue` SQLite file.
+
+External workers claim jobs atomically with an immediate SQLite transaction.
+Each claim carries a worker ID, heartbeat, and expiry time. This prevents two
+processes from executing the same job. If a worker disappears, the expired
+claim is returned to the queue unless the maximum attempt count is exhausted.
+An operator cancellation wins over a late worker result.
 
 ## Runtime model
 
@@ -61,6 +83,9 @@ All settings support the `VELOCITY_CLAW_` prefix and the legacy short name.
 | `QUEUE_MAX_ATTEMPTS` | `3` | Maximum attempts before normal requeue is blocked |
 | `QUEUE_RECOVER_ON_STARTUP` | `true` | Recover interrupted persisted work at startup |
 | `QUEUE_SHUTDOWN_TIMEOUT_SECONDS` | `10` | Maximum graceful shutdown wait |
+| `QUEUE_EXECUTION_MODE` | `embedded` | `embedded` API workers or an `external` worker process |
+| `QUEUE_WORKER_POLL_MS` | `500` | External worker polling interval |
+| `QUEUE_WORKER_LEASE_SECONDS` | `300` | Claim lease renewed by worker heartbeat |
 
 ## Operator endpoints
 
@@ -79,6 +104,12 @@ Legacy queue endpoints remain available for compatibility. New operator workflow
 ## Duplicate scheduling protection
 
 Tracked task handles, scheduled IDs, and active IDs are checked before a job is scheduled. Repeated recovery or resume calls do not create duplicate worker tasks for the same job.
+
+In external mode, duplicate protection is cross-process: `BEGIN IMMEDIATE`
+serializes claims, the selected queued row is changed to `running` in the same
+transaction, and active leases are renewed until the run completes. Pause and
+resume state is also persisted so every worker observes the same operator
+decision.
 
 ## Diagnostics
 

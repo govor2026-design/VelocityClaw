@@ -6,6 +6,7 @@ This directory contains hardened Linux systemd deployment templates for running 
 
 - `velocity-claw.service` — systemd unit for the API service.
 - `velocity-claw-telegram.service` — optional systemd unit for the Telegram service.
+- `velocity-claw-worker.service` — optional separate persistent queue worker.
 - `velocity-claw-backup.service` — oneshot online backup for both SQLite databases.
 - `velocity-claw-backup.timer` — daily backup schedule with randomized delay.
 - `velocity-claw.env.example` — environment template for `/etc/velocity-claw/velocity-claw.env`.
@@ -18,6 +19,7 @@ sudo useradd --system --home /var/lib/velocity-claw --shell /usr/sbin/nologin ve
 sudo mkdir -p /opt/velocityclaw /etc/velocity-claw
 sudo cp deploy/systemd/velocity-claw.service /etc/systemd/system/velocity-claw.service
 sudo cp deploy/systemd/velocity-claw-telegram.service /etc/systemd/system/velocity-claw-telegram.service
+sudo cp deploy/systemd/velocity-claw-worker.service /etc/systemd/system/velocity-claw-worker.service
 sudo cp deploy/systemd/velocity-claw-backup.service /etc/systemd/system/velocity-claw-backup.service
 sudo cp deploy/systemd/velocity-claw-backup.timer /etc/systemd/system/velocity-claw-backup.timer
 sudo cp deploy/systemd/velocity-claw.tmpfiles.conf /etc/tmpfiles.d/velocity-claw.conf
@@ -40,6 +42,17 @@ sudo systemctl enable --now velocity-claw-telegram
 
 The Telegram unit is intentionally not enabled until its token and allowed chat are configured.
 
+To move queue execution out of the API process, set
+`VELOCITY_CLAW_QUEUE_EXECUTION_MODE=external` in the environment file and
+enable the worker:
+
+```bash
+sudo systemctl enable --now velocity-claw-worker
+```
+
+Do not enable the worker while the mode is `embedded`; the CLI fails closed to
+prevent the API and worker from executing the same queue.
+
 ## Operate
 
 ```bash
@@ -48,6 +61,8 @@ sudo journalctl -u velocity-claw -f
 sudo systemctl restart velocity-claw
 sudo systemctl status velocity-claw-telegram --no-pager
 sudo journalctl -u velocity-claw-telegram -f
+sudo systemctl status velocity-claw-worker --no-pager
+sudo journalctl -u velocity-claw-worker -f
 sudo systemctl status velocity-claw-backup.timer --no-pager
 sudo systemctl start velocity-claw-backup.service
 sudo journalctl -u velocity-claw-backup.service --since today

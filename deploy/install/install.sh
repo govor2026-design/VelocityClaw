@@ -9,6 +9,7 @@ STATE_DIR="${STATE_DIR:-/var/lib/velocity-claw}"
 LOG_DIR="${LOG_DIR:-/var/log/velocity-claw}"
 SERVICE_NAME="${SERVICE_NAME:-velocity-claw}"
 TELEGRAM_SERVICE_NAME="${TELEGRAM_SERVICE_NAME:-velocity-claw-telegram}"
+WORKER_SERVICE_NAME="${WORKER_SERVICE_NAME:-velocity-claw-worker}"
 BACKUP_SERVICE_NAME="velocity-claw-backup"
 BACKUP_TIMER_NAME="velocity-claw-backup.timer"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -97,11 +98,13 @@ install_config() {
 install_systemd() {
   require_file "$APP_DIR/deploy/systemd/velocity-claw.service"
   require_file "$APP_DIR/deploy/systemd/velocity-claw-telegram.service"
+  require_file "$APP_DIR/deploy/systemd/velocity-claw-worker.service"
   require_file "$APP_DIR/deploy/systemd/velocity-claw-backup.service"
   require_file "$APP_DIR/deploy/systemd/velocity-claw-backup.timer"
   require_file "$APP_DIR/deploy/systemd/velocity-claw.tmpfiles.conf"
   cp "$APP_DIR/deploy/systemd/velocity-claw.service" "/etc/systemd/system/$SERVICE_NAME.service"
   cp "$APP_DIR/deploy/systemd/velocity-claw-telegram.service" "/etc/systemd/system/$TELEGRAM_SERVICE_NAME.service"
+  cp "$APP_DIR/deploy/systemd/velocity-claw-worker.service" "/etc/systemd/system/$WORKER_SERVICE_NAME.service"
   cp "$APP_DIR/deploy/systemd/velocity-claw-backup.service" "/etc/systemd/system/$BACKUP_SERVICE_NAME.service"
   cp "$APP_DIR/deploy/systemd/velocity-claw-backup.timer" "/etc/systemd/system/$BACKUP_TIMER_NAME"
   cp "$APP_DIR/deploy/systemd/velocity-claw.tmpfiles.conf" "/etc/tmpfiles.d/$SERVICE_NAME.conf"
@@ -117,6 +120,7 @@ Velocity Claw installation finished.
 
 Service: $SERVICE_NAME
 Optional Telegram service: $TELEGRAM_SERVICE_NAME
+Optional external worker service: $WORKER_SERVICE_NAME
 Daily backup timer: $BACKUP_TIMER_NAME
 App dir: $APP_DIR
 Config: $CONFIG_DIR/velocity-claw.env
@@ -130,6 +134,7 @@ Next steps:
 4. To enable Telegram, set VELOCITY_CLAW_TELEGRAM_TOKEN and VELOCITY_CLAW_TELEGRAM_CHAT_ID
 5. Start Telegram with: systemctl enable --now $TELEGRAM_SERVICE_NAME
 6. Start scheduled backups now with: systemctl start $BACKUP_TIMER_NAME
+7. For external queue execution, set VELOCITY_CLAW_QUEUE_EXECUTION_MODE=external and enable --now $WORKER_SERVICE_NAME
 EOF
 }
 

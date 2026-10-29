@@ -53,6 +53,31 @@ services:
       - /tmp:rw,noexec,nosuid,size=64m
     command: ["python", "cli.py", "--telegram"]
 
+  velocity-claw-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: velocity-claw:latest
+    container_name: velocity-claw-worker
+    profiles: ["worker"]
+    restart: unless-stopped
+    env_file:
+      - ./velocity-claw.env
+    volumes:
+      - velocity_claw_data:/var/lib/velocity-claw
+      - velocity_claw_logs:/var/log/velocity-claw
+    depends_on:
+      velocity-claw:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: false
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    command: ["python", "cli.py", "--worker"]
+
 volumes:
   velocity_claw_data:
   velocity_claw_logs:

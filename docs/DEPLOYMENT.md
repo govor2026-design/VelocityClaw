@@ -58,6 +58,7 @@ Relevant files:
 
 - `deploy/systemd/velocity-claw.service`
 - `deploy/systemd/velocity-claw-telegram.service`
+- `deploy/systemd/velocity-claw-worker.service`
 - `deploy/systemd/velocity-claw-backup.service`
 - `deploy/systemd/velocity-claw-backup.timer`
 - `deploy/systemd/velocity-claw.env.example`
@@ -88,6 +89,7 @@ The Compose template includes:
 
 - API healthcheck
 - optional `telegram` profile for persistent bot polling
+- optional `worker` profile for external queue execution
 - persistent data volume
 - persistent log volume
 - dropped Linux capabilities

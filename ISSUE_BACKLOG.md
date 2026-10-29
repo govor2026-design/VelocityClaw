@@ -6,7 +6,7 @@ This document contains the prioritized development backlog for VelocityClaw.
 
 ## Implementation status — 2026-10-13
 
-The original foundation backlog is **17 of 18 issues complete**. The remaining partial issue is optional for a single-owner Telegram/API deployment.
+The original foundation backlog is **18 of 18 issues complete**.
 
 | Issue | Status | Current implementation |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ The original foundation backlog is **17 of 18 issues complete**. The remaining p
 | 13. Web dashboard | Complete | Dashboard v2 exposes runs, steps, artifacts, diagnostics, queue, and approvals. |
 | 14. Approval workflow | Complete | Sensitive steps pause, approve/reject decisions are audited, and continuation is guarded. |
 | 15. Execution profiles | Complete | Safe, dev, and owner profiles change tool access and are exposed through API diagnostics. |
-| 16. Background workers | Partial | API jobs execute asynchronously with lifecycle controls; an optional separate worker process is not implemented. |
+| 16. Background workers | Complete | Embedded execution remains the default; optional external workers use atomic SQLite claims, leases, heartbeats, recovery, and deployment templates. |
 | 17. Queue and concurrency | Complete | Persistent queue supports limits, cancellation, retry, recovery, pause/resume, and shutdown. |
 | 18. Deployment hardening | Complete | Non-root Docker/systemd paths, safe defaults, Telegram service, WAL, backups, and smoke gates are documented and tested. |
 
