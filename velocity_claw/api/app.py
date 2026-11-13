@@ -2,26 +2,39 @@ from __future__ import annotations
 
 from inspect import isawaitable
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
+from velocity_claw.api.approval_review_v2 import render_approval_review_v2
 from velocity_claw.api.approval_v2 import (
     approve_with_guard,
     build_approval_detail,
     build_approval_index,
     reject_with_guard,
 )
-from velocity_claw.api.approval_review_v2 import render_approval_review_v2
+from velocity_claw.api.artifact_explorer_v2 import (
+    normalize_step_filter,
+    render_artifact_explorer_v2,
+)
 from velocity_claw.api.auth import install_api_key_auth
-from velocity_claw.api.dashboard_filters import VALID_PROFILES, VALID_RUN_STATUSES, normalize_filter
+from velocity_claw.api.dashboard_filters import (
+    VALID_PROFILES,
+    VALID_RUN_STATUSES,
+    normalize_filter,
+)
 from velocity_claw.api.dashboard_runs_v2 import render_dashboard_runs_v2
 from velocity_claw.api.dashboard_v2 import render_dashboard_v2
 from velocity_claw.api.diagnostics_v2 import build_diagnostics_v2
 from velocity_claw.api.errors import install_api_error_handlers
 from velocity_claw.api.failed_run_resume_v2 import install_failed_run_resume_v2
 from velocity_claw.api.ops_console import build_operations_console
-from velocity_claw.api.run_detail_v2 import build_artifact_index, build_run_detail_v2
-from velocity_claw.api.server import ApprovalDecisionRequest, create_app as create_base_app
+from velocity_claw.api.run_detail_v2 import (
+    build_artifact_detail,
+    build_artifact_index,
+    build_run_detail_v2,
+)
+from velocity_claw.api.server import ApprovalDecisionRequest
+from velocity_claw.api.server import create_app as create_base_app
 from velocity_claw.api.version import build_version_payload
 from velocity_claw.core.queue_persistence import persist_queue_job
 from velocity_claw.timestamps import utc_now_iso
@@ -256,6 +269,79 @@ def install_run_detail_v2(app: FastAPI) -> None:
         if not run:
             raise HTTPException(status_code=404, detail={"status": "failed", "error": "not_found", "detail": "Run not found"})
         return {"status": "ok", "run_id": run_id, "artifacts": build_artifact_index(run)}
+
+    @app.get("/runs/{run_id}/artifacts/v2/items/{artifact_index}")
+    def run_artifact_item_v2(run_id: str, artifact_index: int):
+        run = app.state.agent.memory.load_run(run_id)
+        if not run:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "failed", "error": "not_found", "detail": "Run not found"},
+            )
+        artifact = build_artifact_detail(run, artifact_index)
+        if artifact is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "status": "failed",
+                    "error": "artifact_not_found",
+                    "detail": "Artifact index is outside this run",
+                },
+            )
+        return {"status": "ok", "artifact": artifact}
+
+    @app.get(
+        "/runs/{run_id}/artifacts/v2/explorer",
+        response_class=HTMLResponse,
+    )
+    def run_artifact_explorer_v2(
+        run_id: str,
+        artifact: int | None = Query(default=None, ge=0),
+        artifact_type: str | None = Query(default=None, alias="type"),
+        step: str | None = None,
+        q: str | None = None,
+    ):
+        run = app.state.agent.memory.load_run(run_id)
+        if not run:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "failed", "error": "not_found", "detail": "Run not found"},
+            )
+        normalized_type = (artifact_type or "").strip() or None
+        normalized_query = " ".join((q or "").split()) or None
+        if normalized_type is not None and len(normalized_type) > 100:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "failed", "error": "invalid_type_filter", "detail": "Artifact type must be at most 100 characters"},
+            )
+        if normalized_query is not None and len(normalized_query) > 200:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "failed", "error": "invalid_query_filter", "detail": "Search query must be at most 200 characters"},
+            )
+        try:
+            normalized_step = normalize_step_filter(step)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "failed", "error": "invalid_step_filter", "detail": str(exc)},
+            ) from exc
+
+        index = build_artifact_index(run)
+        selected = build_artifact_detail(run, artifact) if artifact is not None else None
+        if artifact is not None and selected is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "failed", "error": "artifact_not_found", "detail": "Artifact index is outside this run"},
+            )
+        return render_artifact_explorer_v2(
+            run=run,
+            artifact_index=index,
+            selected=selected,
+            artifact_type=normalized_type,
+            step=normalized_step,
+            query=normalized_query,
+        )
 
 
 def install_diagnostics_v2(app: FastAPI) -> None:

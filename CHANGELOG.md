@@ -11,6 +11,7 @@ All notable changes to Velocity Claw are tracked here.
 - Added bounded per-step retries for explicitly transient failures, with configurable backoff and persisted attempt history.
 - Added an optional external queue worker with atomic SQLite claims, leases, heartbeats, crash recovery, CLI startup, and systemd/Docker templates.
 - Added a browser approval-review surface with exact tool context, risk metadata, decision history, continuation outcomes, and guarded approve/reject controls.
+- Added a searchable artifact explorer with type/step filters, full-content JSON access, safe HTML previews, JSON formatting, and bounded browser rendering.
 
 ### Changed
 

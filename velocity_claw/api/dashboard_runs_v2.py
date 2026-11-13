@@ -62,7 +62,7 @@ def render_dashboard_runs_v2(
             f"<td>{_e(run.get('created_at'))}</td>"
             f"<td>{_run_link(run_id, 'inspect', status=status, profile=profile, query=query)} · "
             f"<a href='/runs/{_e(run_id)}/detail/v2'>detail</a> · "
-            f"<a href='/runs/{_e(run_id)}/artifacts/v2'>artifacts</a></td>"
+            f"<a href='/runs/{_e(run_id)}/artifacts/v2/explorer'>artifacts</a></td>"
             "</tr>"
         )
 
@@ -91,7 +91,7 @@ def render_dashboard_runs_v2(
             f"{''.join(step_rows) or empty_steps_row}"
             "</tbody></table></div>"
             f"<p><a href='/runs/{_e(inspector['run_id'])}/detail/v2'>Open full run detail</a> · "
-            f"<a href='/runs/{_e(inspector['run_id'])}/artifacts/v2'>Open artifact index</a></p>"
+            f"<a href='/runs/{_e(inspector['run_id'])}/artifacts/v2/explorer'>Open artifact explorer</a></p>"
         )
 
     return f"""

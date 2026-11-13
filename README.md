@@ -289,6 +289,7 @@ deploy/
 
 docs/
   API.md          API endpoint guide
+  ARTIFACTS.md    artifact explorer and full-content access
   DEPLOYMENT.md   unified deployment guide
   FAILURE_TYPES.md stable machine-readable failure contract
   STEP_RETRIES.md  bounded automatic step retry contract
@@ -308,7 +309,7 @@ Known next maturity areas:
 - bulk approval workflows and role-based reviewers
 - multi-node database backends beyond the single-host SQLite deployment
 - multi-project and multi-user model
-- richer artifact explorer
+- artifact comparison, export, and retention controls
 - production observability stack
 
 ---

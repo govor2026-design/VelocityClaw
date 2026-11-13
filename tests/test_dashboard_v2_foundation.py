@@ -137,6 +137,7 @@ def test_run_links_include_v2_and_classic_destinations():
 
     assert "/runs/run-1/detail/v2" in html
     assert "/runs/run-1/artifacts/v2" in html
+    assert "/runs/run-1/artifacts/v2/explorer" in html
     assert "/runs/run-1/forensics" in html
     assert "/runs/run-1/report" in html
     assert "/runs/run-1/view" in html

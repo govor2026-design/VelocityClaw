@@ -44,6 +44,9 @@ The smoke script checks public health, protected-route auth behavior, authentica
 | GET | `/dashboard/v2` | Dashboard v2 HTML overview |
 | GET | `/dashboard/v2/runs` | Searchable run and step inspector (`status`, `profile`, `q`, and `run_id` filters) |
 | GET | `/approvals/v2/{run_id}/{step_id}/review` | Browser approval review and decision surface |
+| GET | `/runs/{run_id}/artifacts/v2` | Structured artifact index with explorer and item links |
+| GET | `/runs/{run_id}/artifacts/v2/items/{artifact_index}` | Full artifact metadata and content |
+| GET | `/runs/{run_id}/artifacts/v2/explorer` | Searchable HTML artifact explorer (`type`, `step`, `q`, and `artifact` filters) |
 
 Diagnostics v2 includes:
 

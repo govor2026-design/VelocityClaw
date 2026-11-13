@@ -24,7 +24,8 @@ def run_links(run_id: Any) -> str:
     return (
         f"<a href='/dashboard/v2/runs?run_id={safe_run_id}'>inspect</a> · "
         f"<a href='/runs/{safe_run_id}/detail/v2'>detail v2</a> · "
-        f"<a href='/runs/{safe_run_id}/artifacts/v2'>artifacts</a> · "
+        f"<a href='/runs/{safe_run_id}/artifacts/v2/explorer'>artifacts</a> · "
+        f"<a href='/runs/{safe_run_id}/artifacts/v2'>artifact json</a> · "
         f"<a href='/runs/{safe_run_id}/forensics'>forensics</a> · "
         f"<a href='/runs/{safe_run_id}/report'>report</a> · "
         f"<a href='/runs/{safe_run_id}/view'>classic</a>"
