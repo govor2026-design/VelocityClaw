@@ -160,6 +160,7 @@ def build_approval_detail(run: dict[str, Any] | None, step_id: int) -> dict[str,
             "run": f"/runs/{run.get('run_id')}",
             "run_detail_v2": f"/runs/{run.get('run_id')}/detail/v2",
             "run_artifacts_v2": f"/runs/{run.get('run_id')}/artifacts/v2",
+            "run_artifact_explorer": f"/runs/{run.get('run_id')}/artifacts/v2/explorer",
             "run_view": f"/runs/{run.get('run_id')}/view",
         },
     }

@@ -8,13 +8,50 @@ from velocity_claw.core.agent import VelocityClawAgent
 from velocity_claw.core.failed_run_resume_install import install_failed_run_resume_class
 from velocity_claw.memory.step_attempts_v2 import attempt_summary, effective_steps
 
-
 install_failed_run_resume_class(VelocityClawAgent)
 
 
 def _preview(content: Any, limit: int = 240) -> str:
     text = "" if content is None else str(content)
     return text[:limit]
+
+
+def build_artifact_detail(
+    run: dict[str, Any], artifact_index: int
+) -> dict[str, Any] | None:
+    artifacts = run.get("artifacts", [])
+    if artifact_index < 0 or artifact_index >= len(artifacts):
+        return None
+
+    artifact = artifacts[artifact_index]
+    content = str(artifact.get("content") or "")
+    try:
+        json_value = json.loads(content)
+        is_json = True
+    except (TypeError, ValueError, json.JSONDecodeError):
+        json_value = None
+        is_json = False
+
+    run_id = run.get("run_id")
+    return {
+        "index": artifact_index,
+        "run_id": run_id,
+        "name": artifact.get("name"),
+        "artifact_type": artifact.get("artifact_type") or "text",
+        "step_id": artifact.get("step_id"),
+        "created_at": artifact.get("created_at"),
+        "content": content,
+        "content_size": len(content),
+        "content_size_bytes": len(content.encode("utf-8")),
+        "is_json": is_json,
+        "json_value": json_value,
+        "links": {
+            "api": f"/runs/{run_id}/artifacts/v2/items/{artifact_index}",
+            "explorer": f"/runs/{run_id}/artifacts/v2/explorer?artifact={artifact_index}",
+            "index": f"/runs/{run_id}/artifacts/v2",
+            "run_detail": f"/runs/{run_id}/detail/v2",
+        },
+    }
 
 
 def _artifact_json(artifact: dict[str, Any]) -> dict[str, Any]:
@@ -30,6 +67,8 @@ def build_artifact_index(run: dict[str, Any]) -> dict[str, Any]:
     by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_step: dict[str, list[dict[str, Any]]] = defaultdict(list)
     counts = Counter()
+    items: list[dict[str, Any]] = []
+    run_id = run.get("run_id")
 
     for index, artifact in enumerate(artifacts):
         artifact_type = artifact.get("artifact_type") or "text"
@@ -43,16 +82,24 @@ def build_artifact_index(run: dict[str, Any]) -> dict[str, Any]:
             "created_at": artifact.get("created_at"),
             "content_preview": _preview(artifact.get("content")),
             "content_size": len(str(artifact.get("content") or "")),
+            "api_url": f"/runs/{run_id}/artifacts/v2/items/{index}",
+            "explorer_url": f"/runs/{run_id}/artifacts/v2/explorer?artifact={index}",
         }
         counts[artifact_type] += 1
+        items.append(item)
         by_type[artifact_type].append(item)
         by_step[key].append(item)
 
     return {
         "total": len(artifacts),
         "counts_by_type": dict(counts),
+        "items": items,
         "by_type": dict(by_type),
         "by_step": dict(by_step),
+        "links": {
+            "explorer": f"/runs/{run_id}/artifacts/v2/explorer",
+            "run_detail": f"/runs/{run_id}/detail/v2",
+        },
     }
 
 
@@ -195,6 +242,7 @@ def build_run_detail_v2(run: dict[str, Any]) -> dict[str, Any]:
             "report": f"/runs/{run_id}/report",
             "forensics": f"/runs/{run_id}/forensics",
             "artifacts_v2": f"/runs/{run_id}/artifacts/v2",
+            "artifacts_explorer": f"/runs/{run_id}/artifacts/v2/explorer",
             "detail_v2": f"/runs/{run_id}/detail/v2",
             "resume_v2": f"/runs/{run_id}/resume/v2",
         },

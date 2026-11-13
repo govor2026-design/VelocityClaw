@@ -92,7 +92,7 @@ def test_runs_inspector_renders_filters_and_selected_steps():
     assert "git.inspect" in html
     assert "assertion failed" in html
     assert "test_failed" in html
-    assert "/runs/run-safe/artifacts/v2" in html
+    assert "/runs/run-safe/artifacts/v2/explorer" in html
     assert "option value='completed' selected" in html
     assert "option value='safe' selected" in html
     assert "value='safe run'" in html

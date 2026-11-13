@@ -2,7 +2,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from velocity_claw.api.app import install_run_detail_v2
+from velocity_claw.api.artifact_explorer_v2 import (
+    filter_artifact_items,
+    normalize_step_filter,
+)
 from velocity_claw.api.run_detail_v2 import (
+    build_artifact_detail,
     build_artifact_index,
     build_run_detail_v2,
     build_step_index,
@@ -71,6 +76,32 @@ def test_build_artifact_index_groups_by_type_and_step_with_previews():
     assert index["by_step"]["run_level"][0]["name"] == "run_plan"
     assert index["by_step"]["step_3"][0]["content_size"] == 500
     assert len(index["by_step"]["step_3"][0]["content_preview"]) == 240
+    assert index["items"][2]["api_url"].endswith("/artifacts/v2/items/2")
+    assert index["links"]["explorer"].endswith("/artifacts/v2/explorer")
+
+
+def test_build_artifact_detail_exposes_full_content_and_json_shape():
+    run = make_run()
+
+    plan = build_artifact_detail(run, 0)
+    log = build_artifact_detail(run, 2)
+
+    assert plan["is_json"] is True
+    assert plan["json_value"] == {}
+    assert log["content"] == "x" * 500
+    assert log["content_size"] == 500
+    assert log["content_size_bytes"] == 500
+    assert build_artifact_detail(run, 99) is None
+
+
+def test_artifact_filters_support_type_step_and_multi_term_search():
+    items = build_artifact_index(make_run())["items"]
+
+    assert [item["index"] for item in filter_artifact_items(items, artifact_type="log")] == [2]
+    assert [item["index"] for item in filter_artifact_items(items, step="run")] == [0]
+    assert [item["index"] for item in filter_artifact_items(items, step="3")] == [2]
+    assert [item["index"] for item in filter_artifact_items(items, query="step stdout")] == [2]
+    assert normalize_step_filter("003") == "3"
 
 
 def test_build_step_index_exposes_failed_and_pending_steps():
@@ -121,6 +152,44 @@ def test_run_artifacts_v2_endpoint_returns_index():
     assert payload["status"] == "ok"
     assert payload["run_id"] == RUN_ID
     assert payload["artifacts"]["counts_by_type"]["approval"] == 1
+
+
+def test_run_artifact_item_and_explorer_endpoints():
+    client = make_client(make_run())
+
+    item = client.get(f"/runs/{RUN_ID}/artifacts/v2/items/2")
+    explorer = client.get(
+        f"/runs/{RUN_ID}/artifacts/v2/explorer",
+        params={"type": "log", "step": "3", "q": "stdout", "artifact": 2},
+    )
+
+    assert item.status_code == 200
+    assert item.json()["artifact"]["content"] == "x" * 500
+    assert explorer.status_code == 200
+    assert "Artifact explorer" in explorer.text
+    assert "Filtered artifacts: 1 of 3" in explorer.text
+    assert "step_3_stdout" in explorer.text
+    assert "x" * 500 in explorer.text
+    assert "option value='log' selected" in explorer.text
+    assert "option value='3' selected" in explorer.text
+
+
+def test_artifact_explorer_escapes_content_and_validates_filters():
+    run = make_run()
+    run["task"] = "Inspect <script>alert(1)</script>"
+    run["artifacts"][2]["content"] = "</pre><script>alert(2)</script>"
+    client = make_client(run)
+
+    response = client.get(
+        f"/runs/{RUN_ID}/artifacts/v2/explorer?artifact=2"
+    )
+
+    assert response.status_code == 200
+    assert "Inspect &lt;script&gt;alert(1)&lt;/script&gt;" in response.text
+    assert "&lt;/pre&gt;&lt;script&gt;alert(2)&lt;/script&gt;" in response.text
+    assert "</pre><script>alert(2)</script>" not in response.text
+    assert client.get(f"/runs/{RUN_ID}/artifacts/v2/explorer?step=bad").status_code == 400
+    assert client.get(f"/runs/{RUN_ID}/artifacts/v2/items/99").status_code == 404
 
 
 def test_run_detail_v2_endpoint_returns_404_for_missing_run():
